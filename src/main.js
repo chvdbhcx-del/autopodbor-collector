@@ -11,8 +11,6 @@ import { LLM } from './llm.js';
 import { toBot, fingerprint } from './listing.js';
 import { makeClient, BotSender } from './tg.js';
 import { decryptSession } from './session.js';
-import { CustomFile } from 'telegram/client/uploads.js';
-import { UA } from './http.js';
 import { ensureJoined, readNewPosts, looksLikeListing, postToListing, sleep } from './sources/channels.js';
 
 const cfg = YAML.parse(fs.readFileSync(new URL('../config.yaml', import.meta.url), 'utf8'));
@@ -59,7 +57,6 @@ async function collectSites(state, rates, llm, emit, deadline) {
         const list = await mod.search(brand, model, { rates, isKnown });
         for (const l of list) {
           l.price_rub = rates.toRub(l.price, l.currency);
-          if (mod.PHOTO_HEADERS) l._photoHeaders = mod.PHOTO_HEADERS;
           l._listFp = listFingerprint(l);
         }
         const fresh = list.filter((l) => !state.isUnchanged(l.uid, fingerprint(l)));
@@ -92,33 +89,8 @@ async function translateAll(list, state, llm) {
   });
 }
 
-// Фото площадок, которые не отдают картинки без своего Referer: качаем сами и шлём боту файлами.
-// Telegram режет массовую загрузку (FloodWait ~25 мин), поэтому за запуск понемногу:
-// до PROTECTED_PER_RUN машин по PROTECTED_PHOTOS фото. Остальные уходят без фото и
-// получат их в следующих запусках (отпечаток без фото не совпадёт с отпечатком площадки).
-const PROTECTED_PER_RUN = 25;
-const PROTECTED_PHOTOS = 4;
-let protectedBudget = PROTECTED_PER_RUN;
-async function uploadProtectedPhotos(sender, list) {
-  for (const l of list) {
-    if (!l._photoHeaders || !l.photos?.length) continue;
-    const urls = l.photos;
-    l.photos = [];
-    if (protectedBudget <= 0 || sender.flooded()) { l._fp = fingerprint(l); continue; }
-    const files = [];
-    for (const [i, u] of urls.slice(0, PROTECTED_PHOTOS).entries()) {
-      try {
-        const r = await fetch(u, { headers: { 'User-Agent': UA, ...l._photoHeaders }, signal: AbortSignal.timeout(20_000) });
-        if (r.ok) { const b = Buffer.from(await r.arrayBuffer()); files.push(new CustomFile(`${i}.jpg`, b.length, '', b)); }
-      } catch { /* пропуск */ }
-    }
-    if (files.length && await sender.sendPhotos(l.uid, files)) {
-      protectedBudget--;
-      // Фото у бота есть: запоминаем отпечаток с адресами, чтобы не слать машину заново.
-      l._fp = fingerprint({ ...l, photos: urls });
-    } else l._fp = fingerprint(l);
-  }
-}
+// Фото площадок с защитой по Referer (Autowini) уходят в бот ссылками как есть:
+// бот сам скачивает их с нужным Referer при показе карточки и запоминает file_id.
 
 const listFingerprint = (l) => `${l.price}|${l.mileage_km}`;
 
@@ -185,7 +157,6 @@ async function runOnce(client, sender, state, rates, llm) {
   // Отправка в бот по одному пакету за раз: площадки шлют найденное по мере готовности.
   let chain = Promise.resolve();
   const emit = (list) => (chain = chain.then(async () => {
-    await uploadProtectedPhotos(sender, list);
     await sendAll(sender, state, list, firstRun);
   }).catch((e) => console.warn('[send]', e.message)));
   const deadline = t0 + (cfg.run_minutes || 38) * 60_000;
