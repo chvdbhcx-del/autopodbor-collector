@@ -3,7 +3,7 @@ name: collect
 on:
   schedule: [{ cron: '17 * * * *' }]
   workflow_dispatch:
-permissions: { contents: write }
+permissions: { contents: write, actions: write }
 concurrency: { group: collect, cancel-in-progress: false }
 jobs:
   collect:
@@ -17,10 +17,13 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-haiku-5-5' }}
+    outputs:
+      started: ${{ steps.check.outputs.started }}
     steps:
       - name: Check secrets
         id: check
         run: |
+          echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
           if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; then
             echo "::notice::Нет TG_API_ID / TG_API_HASH: сборщик не запущен (см. README)."
             echo "skip=1" >> "$GITHUB_OUTPUT"
@@ -57,3 +60,20 @@ jobs:
           git checkout -q --orphan state-tmp && git rm -rq --cached . && cp /tmp/state.json state.json
           [ -f /tmp/session.enc ] && cp /tmp/session.enc session.enc && git add -f session.enc
           git add -f state.json && git commit -qm "state ${{ github.run_id }}" && git push -f origin HEAD:state
+
+  # Cron на GitHub ненадёжен, поэтому каждый запуск сам ставит следующий через час.
+  # Только для публичного репозитория: там минуты бесплатные, ожидание ничего не стоит.
+  next:
+    needs: collect
+    if: always() && !github.event.repository.private && vars.CHAIN != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - name: Wait and dispatch next run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STARTED: ${{ needs.collect.outputs.started }}
+        run: |
+          now=$(date +%s); left=$(( ${STARTED:-$now} + 3600 - now ))
+          [ "$left" -gt 0 ] && sleep "$left"
+          gh api -X POST repos/${{ github.repository }}/actions/workflows/collect.yml/dispatches -f ref=${{ github.ref_name }}
