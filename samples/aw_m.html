@@ -1,0 +1,116 @@
+
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- 레거시 모바일과 동일 환경을 위해 content width 720px 고정 -->
+    <meta name="viewport" content="width=720, viewport-fit=cover" />
+    <link
+      rel="icon"
+      type="image/x-icon"
+      href="https://image.autowini.com/resources/IMG/mobile/favicon.ico"
+    />
+    <!-- 헤더 로고는 CSS background-image라 fetchPriority가 안 먹혀 preload로 처리 (LCP) -->
+    <link
+      rel="preload"
+      as="image"
+      href="https://image.autowini.com/resources/IMG/web-mobile-front/header_logo.svg"
+      fetchpriority="high"
+    />
+    <!-- SEO 기본값, SeoHelmet에서 동적으로 덮어씀 -->
+    <title>
+      Korean Used Cars | Autowini - No.1 Auto Trading Platform in Korea
+    </title>
+    <meta
+      name="description"
+      content="Autowini is a wholesale marketplace for professional automobile traders. We offer the safest and the cheapest ways to buy items directly from South Korea."
+    />
+    <meta
+      name="keywords"
+      content="korean used car, korea used car, korean used car exporter, korean used bus, korean used truck, used hyundai car, used kia car"
+    />
+    <meta
+      property="og:title"
+      content="Korean Used Cars | Autowini - No.1 Auto Trading Platform in Korea"
+    />
+    <meta
+      property="og:description"
+      content="Autowini is a wholesale marketplace for professional automobile traders. We offer the safest and the cheapest ways to buy items directly from South Korea."
+    />
+    <meta property="og:site_name" content="Autowini" />
+    <meta property="og:url" content="https://m.autowini.com/" />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:image"
+      content="https://image.autowini.com/resources/IMG/DGN/autowini/img_opengraph_2025.png"
+    />
+    <!-- Google Tag Manager (모바일 전용 컨테이너), 원본 스니펫을 유지하되 초기 렌더링과 경쟁하지 않도록 load 후 유휴 시간에 실행 -->
+    <script>
+      window.addEventListener('load', function () {
+        var loadGtm = function () {
+          (function (w, d, s, l, i) {
+            w[l] = w[l] || [];
+            w[l].push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
+            var f = d.getElementsByTagName(s)[0],
+              j = d.createElement(s),
+              dl = l != 'dataLayer' ? '&l=' + l : '';
+            j.async = true;
+            j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
+            f.parentNode.insertBefore(j, f);
+          })(window, document, 'script', 'dataLayer', 'GTM-PWHFJVMG');
+        };
+        // requestIdleCallback 미지원 브라우저는 setTimeout 폴백
+        if ('requestIdleCallback' in window) {
+          requestIdleCallback(loadGtm, { timeout: 3000 });
+        } else {
+          setTimeout(loadGtm, 0);
+        }
+      });
+    </script>
+    <!-- GA4, 스텁으로 이벤트는 즉시 큐잉하고 gtag.js 본체만 load 후 유휴 시간에 로드 -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('config', 'G-MZ8Y429RK9', {
+        allow_google_signals: true,
+        allow_ad_personalization_signals: true,
+      });
+      window.addEventListener('load', function () {
+        var loadGtag = function () {
+          var s = document.createElement('script');
+          s.async = true;
+          s.src = 'https://www.googletagmanager.com/gtag/js?id=G-MZ8Y429RK9';
+          document.head.appendChild(s);
+        };
+        // requestIdleCallback 미지원 브라우저는 setTimeout 폴백
+        if ('requestIdleCallback' in window) {
+          requestIdleCallback(loadGtag, { timeout: 3000 });
+        } else {
+          setTimeout(loadGtag, 0);
+        }
+      });
+    </script>
+    <script type="module" crossorigin src="/w/react-route/assets/index-nkTmptLi.js"></script>
+    <link rel="modulepreload" crossorigin href="/w/react-route/assets/react-vendor-DiLRTfRE.js">
+    <link rel="stylesheet" crossorigin href="/w/react-route/assets/index-DGfeiL2f.css">
+  </head>
+  <body>
+    <!-- GTM noscript 폴백은 body 최상단 고정 -->
+    <noscript>
+      <iframe
+        src="https://www.googletagmanager.com/ns.html?id=GTM-PWHFJVMG"
+        height="0"
+        width="0"
+        style="display: none; visibility: hidden"
+      ></iframe>
+    </noscript>
+    <div id="root"></div>
+  <script type="text/javascript"  src="/SS29TmRKF/v8xh2T/nbQ/frEcXpk9izui/O1QEOjg/bH4/nAWNofih3AQ?v=9bd034ae-e4d9-d2a0-9381-b0c502161735" defer></script></body>
+</html>
+
+
+
