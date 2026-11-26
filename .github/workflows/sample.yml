@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       urls: { description: 'JSON [[name, url, opts?]]', required: true }
+      branch: { description: 'branch to push samples to', required: false, default: 'samples' }
 permissions: { contents: write }
 jobs:
   sample:
@@ -18,4 +19,4 @@ jobs:
         run: |
           git config user.name ci && git config user.email ci@users.noreply.github.com
           git checkout --orphan samples-tmp && git rm -rq --cached . && git add -f samples
-          git commit -qm "samples ${{ github.run_id }}" && git push -f origin HEAD:samples
+          git commit -qm "samples ${{ github.run_id }}" && git push -f origin HEAD:${{ inputs.branch }}
