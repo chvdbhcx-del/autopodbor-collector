@@ -33,6 +33,8 @@ async function pool(items, n, fn) {
 // Площадки идут параллельно, модели внутри площадки по очереди. Найденное по каждой модели
 // сразу переводится и уходит в бот (emit), чтобы долгий первый проход не терял работу.
 // После deadline новые модели не начинаются: остаток доберёт следующий запуск.
+const seenUids = new Set();
+
 async function collectSites(state, rates, llm, emit, deadline) {
   const names = cfg.sites || [];
   let total = 0;
@@ -48,7 +50,11 @@ async function collectSites(state, rates, llm, emit, deadline) {
       if (Date.now() > deadline) { console.log(`[${name}] время вышло, продолжу со следующего запуска`); break; }
       const [brand, model] = key.split('|');
       // Уже отправленное и не изменившееся (цена, пробег) не перекачиваем.
-      const isKnown = (l) => state.data.sent[l.uid]?.listFp === listFingerprint(l);
+      const isKnown = (l) => {
+        const known = state.data.sent[l.uid]?.listFp === listFingerprint(l);
+        if (known) seenUids.add(l.uid);
+        return known;
+      };
       try {
         const list = await mod.search(brand, model, { rates, isKnown });
         for (const l of list) {
@@ -164,6 +170,12 @@ async function runOnce(client, sender, state, rates, llm) {
   const deadline = t0 + (cfg.run_minutes || 38) * 60_000;
   const fromSites = await collectSites(state, rates, llm, emit, deadline);
   await chain;
+  // Объявления, которые всё ещё висят на площадках без изменений: бот продлит им жизнь,
+  // а не встретившиеся 14 дней скроет как проданные.
+  const seen = [...seenUids];
+  for (let i = 0; i < seen.length; i += 3000) {
+    try { await sender.sendBatch([], { notify: false, seen: seen.slice(i, i + 3000) }); } catch (e) { console.warn('[send] seen:', e.message); }
+  }
   state.save();
   console.log(`[run] отправлено ${fromSites + fromTg.length} (площадки ${fromSites}, каналы ${fromTg.length}) за ${Math.round((Date.now() - t0) / 1000)} с`);
 }
