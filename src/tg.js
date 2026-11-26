@@ -38,9 +38,20 @@ export class BotSender {
     } catch (e) { console.warn('[send] не очистил чат с ботом:', e.message); }
   }
 
-  // Фото поста канала: бот запомнит file_id по подписи «#ingest <uid> <pos>».
+  // Telegram ответил FloodWait: до этого момента фото не грузим, иначе ожидание только растёт.
+  flooded() { return Date.now() < (this.floodUntil || 0); }
+  noteFlood(e) {
+    const sec = e?.seconds || Number(/wait of (\d+) seconds/.exec(e?.message || '')?.[1]);
+    if (!sec) return false;
+    this.floodUntil = Date.now() + sec * 1000;
+    console.warn(`[send] Telegram просит паузу ${sec} с, фото до конца запуска не грузим`);
+    return true;
+  }
+
+  // Фото поста канала: бот запомнит file_id по подписи «#ingest <uid> <pos>». true, если ушли все.
   async sendPhotos(uid, photos) {
-    if (!photos.length) return;
+    if (!photos.length) return true;
+    if (this.flooded()) return false;
     // Все фото поста, пачками по 10 (больше Telegram в один альбом не берёт). Бот хранит до 60.
     const all = photos.slice(0, 60);
     for (let off = 0; off < all.length; off += 10) {
@@ -48,14 +59,16 @@ export class BotSender {
       try {
         await this.forget(await this.client.sendFile(this.bot, { file: list, caption: list.map((_, i) => `#ingest ${uid} ${off + i}`) }));
       } catch (e) {
+        if (this.noteFlood(e)) return false;
         console.warn(`[send] альбом ${uid} не ушёл (${e.message}), шлю по одному`);
         for (let i = 0; i < list.length; i++) {
-          try { await this.forget(await this.client.sendFile(this.bot, { file: list[i], caption: `#ingest ${uid} ${off + i}` })); } catch { /* пропуск */ }
+          try { await this.forget(await this.client.sendFile(this.bot, { file: list[i], caption: `#ingest ${uid} ${off + i}` })); } catch (e2) { if (this.noteFlood(e2)) return false; }
           await sleep(400);
         }
       }
       await sleep(700);
     }
+    return true;
   }
 
   // Попросить бот обновить подписки по площадкам, которые он опрашивает сам.

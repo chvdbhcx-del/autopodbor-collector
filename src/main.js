@@ -91,17 +91,30 @@ async function translateAll(list, state, llm) {
 }
 
 // Фото площадок, которые не отдают картинки без своего Referer: качаем сами и шлём боту файлами.
+// Telegram режет массовую загрузку (FloodWait ~25 мин), поэтому за запуск понемногу:
+// до PROTECTED_PER_RUN машин по PROTECTED_PHOTOS фото. Остальные уходят без фото и
+// получат их в следующих запусках (отпечаток без фото не совпадёт с отпечатком площадки).
+const PROTECTED_PER_RUN = 25;
+const PROTECTED_PHOTOS = 4;
+let protectedBudget = PROTECTED_PER_RUN;
 async function uploadProtectedPhotos(sender, list) {
   for (const l of list) {
     if (!l._photoHeaders || !l.photos?.length) continue;
+    const urls = l.photos;
+    l.photos = [];
+    if (protectedBudget <= 0 || sender.flooded()) { l._fp = fingerprint(l); continue; }
     const files = [];
-    for (const [i, u] of l.photos.slice(0, 20).entries()) {
+    for (const [i, u] of urls.slice(0, PROTECTED_PHOTOS).entries()) {
       try {
         const r = await fetch(u, { headers: { 'User-Agent': UA, ...l._photoHeaders }, signal: AbortSignal.timeout(20_000) });
         if (r.ok) { const b = Buffer.from(await r.arrayBuffer()); files.push(new CustomFile(`${i}.jpg`, b.length, '', b)); }
       } catch { /* пропуск */ }
     }
-    if (files.length) { await sender.sendPhotos(l.uid, files); l.photos = []; }
+    if (files.length && await sender.sendPhotos(l.uid, files)) {
+      protectedBudget--;
+      // Фото у бота есть: запоминаем отпечаток с адресами, чтобы не слать машину заново.
+      l._fp = fingerprint({ ...l, photos: urls });
+    } else l._fp = fingerprint(l);
   }
 }
 
@@ -146,7 +159,7 @@ async function sendAll(sender, state, listings, firstRun) {
     // Первый запуск наполняет базу: не засыпаем подписчиков уведомлениями.
     await sender.sendBatch(chunk.map(toBot), { notify: !firstRun });
     for (const l of chunk) {
-      state.markSent(l, fingerprint(l));
+      state.markSent(l, l._fp || fingerprint(l));
       if (l._listFp) state.data.sent[l.uid].listFp = l._listFp;
     }
     state.save();
