@@ -1,0 +1,254 @@
+<!DOCTYPE html><html><head><script>
+
+
+const kcContext = {
+    "social": {
+        /* class: org.keycloak.forms.login.freemarker.model.IdentityProviderBean */
+        "baseURI": {
+            "path": "\/",
+            "rawPath": "\/",
+            "rawSchemeSpecificPart": "\/?client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ&session_code=qUXrjf5ZdHrEMkYVQwvAHhR3M28KM2Y2I_c_f33Vft0",
+            "opaque": false,
+            "query": "client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ&session_code=qUXrjf5ZdHrEMkYVQwvAHhR3M28KM2Y2I_c_f33Vft0",
+            "schemeSpecificPart": "\/?client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ&session_code=qUXrjf5ZdHrEMkYVQwvAHhR3M28KM2Y2I_c_f33Vft0",
+            "port": -1,
+            "absolute": false,
+            "rawQuery": "client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ&session_code=qUXrjf5ZdHrEMkYVQwvAHhR3M28KM2Y2I_c_f33Vft0",
+        },
+        "providers": [
+        ],
+    },
+    "auth": {
+        /* class: org.keycloak.forms.login.freemarker.model.AuthenticationContextBean */
+        "showResetCredentials": false,
+        "authenticationSelections": [
+            {
+                "helpText": "auth-username-password-form-help-text",
+                "displayName": "auth-username-password-form-display-name",
+                "iconCssClass": "kcAuthenticatorDefaultClass",
+                "authExecId": "214340e3-65e8-4b1d-bc53-7242f96172a7",
+                /*authenticationExecution: Should not be exposed */
+            },
+        ],
+        "showUsername": false,
+        "showTryAnotherWayLink": false,
+        /*auth.attemptedUsername excluded*/
+    },
+    "login": {
+        /* class: org.keycloak.forms.login.freemarker.model.LoginBean */
+    },
+    "url": {
+        /* class: org.keycloak.forms.login.freemarker.model.UrlBean */
+        "oauthAction": "\/realms/wini/login-actions/authenticate",
+        "resourcesPath": "\/resources/cgoer/login/autowini-theme",
+        "loginAction": "https://k1wp8i-auth.tradewini.com/realms/wini/login-actions/authenticate?session_code=qUXrjf5ZdHrEMkYVQwvAHhR3M28KM2Y2I_c_f33Vft0&execution=214340e3-65e8-4b1d-bc53-7242f96172a7&client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ",
+        "loginUrl": "\/realms/wini/login-actions/authenticate?client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ",
+        "resourcesCommonPath": "\/resources/cgoer/common/keycloak",
+        "firstBrokerLoginUrl": "\/realms/wini/login-actions/first-broker-login?client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ",
+        "registrationUrl": "\/realms/wini/login-actions/registration?client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ",
+        "logoutConfirmAction": "\/realms/wini/protocol/openid-connect/logout/logout-confirm?client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ",
+        "registrationAction": "https://k1wp8i-auth.tradewini.com/realms/wini/login-actions/authenticate?session_code=qUXrjf5ZdHrEMkYVQwvAHhR3M28KM2Y2I_c_f33Vft0&execution=214340e3-65e8-4b1d-bc53-7242f96172a7&client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ",
+        "loginResetCredentialsUrl": "\/realms/wini/login-actions/reset-credentials?client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ",
+        "ssoLoginInOtherTabsUrl": "\/realms/wini/login-actions/restart?client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ&skip_logout=true",
+        "resourcesUrl": "\/resources/cgoer?client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ/login/autowini-theme",
+        "loginRestartFlowUrl": "\/realms/wini/login-actions/restart?client_id=autowini-web&tab_id=XXGjHECMhzo&client_data=eyJydSI6Imh0dHBzOi8vd3d3LmF1dG93aW5pLmNvbS9sb2dpbi9vYXV0aDIvY29kZS9rZXljbG9hayIsInJ0IjoiY29kZSIsInN0IjoiSDU2WGFudU5Oc0ZsUW9jaDdYallxb0xqUjZKa1duQmlHbmktRzZmQ2pCdz0ifQ&skip_logout=false",
+        "oauth2DeviceVerificationAction": "\/realms/wini/login-actions/authenticate",
+    },
+    "authenticationSession": {
+        /* class: org.keycloak.forms.login.freemarker.model.AuthenticationSessionBean */
+        "tabId": "XXGjHECMhzo",
+        "authSessionId": "7a0debb0-e71a-41a2-af1c-18254f6aada7",
+    },
+    "messagesPerField": {
+        /* class: org.keycloak.theme.beans.MessagesPerFieldBean */
+        "get": function (fieldName) { if(fieldName === 'firstName'){ return ''; } if(fieldName === 'lastName'){ return ''; } if(fieldName === 'email'){ return ''; } if(fieldName === 'username' || fieldName === 'password' ){ return ''; } if(fieldName === 'password-confirm'){ return ''; } if(fieldName === 'global'){ return ''; } if(fieldName === 'totp'){ return ''; } if(fieldName === 'userLabel'){ return ''; } if(fieldName === 'recoveryCodeInput'){ return ''; } if(fieldName === 'termsAccepted'){ return ''; } if(fieldName === 'entry'){ return ''; } },
+        "existsError": function (fieldName) { if(fieldName === 'firstName' ){ return false; }if(fieldName === 'lastName' ){ return false; }if(fieldName === 'email' ){ return false; }if(fieldName === 'username' || fieldName === 'password' ){ return false; } if(fieldName === 'password-confirm' ){ return false; }if(fieldName === 'global' ){ return false; }if(fieldName === 'totp' ){ return false; }if(fieldName === 'userLabel' ){ return false; }if(fieldName === 'recoveryCodeInput' ){ return false; }if(fieldName === 'termsAccepted' ){ return false; }if(fieldName === 'entry' ){ return false; }},
+    },
+    "client": {
+        /* class: org.keycloak.forms.login.freemarker.model.ClientBean */
+        "clientId": "autowini-web",
+        "description": "web-www Client",
+        "baseUrl": "",
+        "name": "오토위니 web",
+        "attributes": {
+            "realm_client": "false",
+            "oidc.ciba.grant.enabled": "false",
+            "backchannel.logout.session.required": "true",
+            "login_theme": "autowini-theme",
+            "post.logout.redirect.uris": "https://autowini.com/*##https://www.autowini.com/*",
+            "oauth2.device.authorization.grant.enabled": "false",
+            "display.on.consent.screen": "false",
+            "backchannel.logout.revoke.offline.tokens": "false",
+        },
+    },
+    "passwordPolicies": {
+        /* class: org.keycloak.forms.login.freemarker.model.PasswordPoliciesBean */
+        "notEmail": false,
+        "length": 6,
+        "notUsername": true,
+        "maxLength": 22,
+    },
+    "realm": {
+        /* class: org.keycloak.forms.login.freemarker.model.RealmBean */
+        "displayName": "wini",
+        "registrationAllowed": true,
+        "displayNameHtml": "wini",
+        "resetPasswordAllowed": true,
+        "resetCredentialsActionTokenLifespanMinutes": 5,
+        "password": true,
+        "actionTokenGeneratedByUserLifespanMinutes": 5,
+        "internationalizationEnabled": false,
+        "idpVerifyAccountLinkActionTokenLifespanMinutes": 5,
+        "verifyEmailActionTokenLifespanMinutes": 5,
+        "loginWithEmailAllowed": false,
+        "duplicateEmailsAllowed": false,
+        "editUsernameAllowed": false,
+        "name": "wini",
+        "rememberMe": true,
+        "registrationEmailAsUsername": false,
+        "identityFederationEnabled": false,
+    },
+    "scripts": [
+    ],
+    "properties": {
+        "parent": "keycloak",
+        "styles": "css/login.css",
+        "stylesCommon": "vendor/patternfly-v4/patternfly.min.css vendor/patternfly-v3/css/patternfly.min.css vendor/patternfly-v3/css/patternfly-additions.min.css lib/pficon/pficon.css",
+        "KEYCLOAKIFY_SPA_DEV_SERVER_PORT": "",
+        "darkMode": "true",
+    },
+};
+kcContext.keycloakifyVersion = "11.11.3";
+kcContext.themeVersion = "0.0.0";
+kcContext.themeType = "login";
+kcContext.themeName = "autowini-theme";
+kcContext.pageId = "login.ftl";
+kcContext.ftlTemplateFileName = "login.ftl";
+
+
+kcContext["x-keycloakify"] = {};
+
+kcContext["x-keycloakify"].resourcesPath = "/resources/cgoer/login/autowini-theme";
+
+{
+    var messages = {};
+        messages["auth-username-password-form-help-text"] = decodeHtmlEntities("Sign in by entering your username and password.");
+        messages["auth-username-password-form-display-name"] = decodeHtmlEntities("Username and password");
+    kcContext["x-keycloakify"].messages = messages;
+}
+
+if( 
+    kcContext.url instanceof Object &&
+    typeof kcContext.url.resourcesPath === "string"
+){
+    kcContext.url.resourcesCommonPath = kcContext.url.resourcesPath + "/resources-common";
+}
+
+if( kcContext.messagesPerField ){
+    var existsError_singleFieldName = kcContext.messagesPerField.existsError;
+    kcContext.messagesPerField.existsError = function (){
+        for( let i = 0; i < arguments.length; i++ ){
+            if( existsError_singleFieldName(arguments[i]) ){
+                return true;
+            }
+        }
+        return false;
+    };
+    kcContext.messagesPerField.exists = function (fieldName) {
+        return kcContext.messagesPerField.get(fieldName) !== "";
+    };
+    kcContext.messagesPerField.printIfExists = function (fieldName, text) {
+        return kcContext.messagesPerField.exists(fieldName) ? text : undefined;
+    };
+    kcContext.messagesPerField.getFirstError = function () {
+        for( let i = 0; i < arguments.length; i++ ){
+            const fieldName = arguments[i];
+            if( kcContext.messagesPerField.existsError(fieldName) ){
+                return kcContext.messagesPerField.get(fieldName);
+            }
+        }
+    };
+}
+attributes_to_attributesByName: {
+    if( !kcContext.profile ){
+        break attributes_to_attributesByName;
+    }
+    if( !kcContext.profile.attributes ){
+        break attributes_to_attributesByName;
+    }
+    var attributes = kcContext.profile.attributes;
+    delete kcContext.profile.attributes;
+    kcContext.profile.attributesByName = {};
+    attributes.forEach(function(attribute){
+        kcContext.profile.attributesByName[attribute.name] = attribute;
+    });
+}
+
+redirect_to_dev_server: {
+
+    switch(kcContext.themeType){
+        case "login":
+            break redirect_to_dev_server;
+        case "account":
+            if( kcContext.pageId !== "index.ftl" ){
+                break redirect_to_dev_server;
+            }
+            break;
+        case "admin":
+            break;
+        default: 
+            break redirect_to_dev_server;
+    }
+
+    const devSeverPort = kcContext.properties.KEYCLOAKIFY_SPA_DEV_SERVER_PORT;
+
+    if( !devSeverPort ){
+        break redirect_to_dev_server;
+    }
+
+    const redirectUrl = new URL(window.location.href);
+
+    const keycloakServerPort = redirectUrl.port;
+
+    redirectUrl.port = devSeverPort;
+
+    delete kcContext.msgJSON;
+
+    console.log(kcContext);
+
+    redirectUrl.searchParams.set("kcContext", JSON.stringify(kcContext));
+    redirectUrl.searchParams.set("keycloakServerPort", keycloakServerPort);
+
+    window.location.href = redirectUrl.toString();
+
+}
+
+
+window.kcContext = kcContext;
+
+function decodeHtmlEntities(htmlStr){
+    var element = decodeHtmlEntities.element;
+    if (!element) {
+        element = document.createElement("textarea");
+        decodeHtmlEntities.element = element;
+    }
+    element.innerHTML = htmlStr;
+    return element.value;
+}
+
+
+</script>
+<base href="/resources/cgoer/login/autowini-theme/dist/">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Autowini</title>
+    <!-- LCP 최적화: React 렌더링 전에 프리로드 스캐너가 웹 로고를 발견할 수 있도록 preload -->
+    <link rel="preload" as="image" href="https://image.autowini.com/resources/IMG/renew/common/logo.svg" fetchpriority="high">
+    <script type="module" crossorigin="" src="/resources/cgoer/login/autowini-theme/dist/assets/index-CnwvGYFw.js"></script>
+    <link rel="stylesheet" crossorigin="" href="/resources/cgoer/login/autowini-theme/dist/assets/index-BcR7BszZ.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  
+
+</body></html>
