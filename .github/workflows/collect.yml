@@ -65,7 +65,7 @@ jobs:
   # Только для публичного репозитория: там минуты бесплатные, ожидание ничего не стоит.
   next:
     needs: collect
-    if: always() && vars.CHAIN != '0'
+    if: always() && vars.CHAIN != 'off'
     runs-on: ubuntu-latest
     timeout-minutes: 70
     steps:
