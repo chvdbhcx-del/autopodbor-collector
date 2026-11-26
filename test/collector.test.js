@@ -77,3 +77,16 @@ test('session encrypt/decrypt roundtrip', async () => {
   assert.equal(decryptSession(enc, 'hash123'), '1BVtsOK-session');
   assert.throws(() => decryptSession(enc, 'other'));
 });
+
+test('LLM via Groq parses JSON into the schema', async () => {
+  process.env.GROQ_API_KEY = 'gsk_x';
+  delete process.env.ANTHROPIC_API_KEY;
+  const { LLM } = await import('../src/llm.js?groq');
+  const orig = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify({ title_ru: 'Kia', desc_ru: 'Без ДТП' }) } }] }) });
+  try {
+    const llm = new LLM();
+    assert.ok(llm.enabled);
+    assert.deepEqual(await llm.translate('Kia', 'text', '2022'), { title_ru: 'Kia', desc_ru: 'Без ДТП' });
+  } finally { globalThis.fetch = orig; delete process.env.GROQ_API_KEY; }
+});

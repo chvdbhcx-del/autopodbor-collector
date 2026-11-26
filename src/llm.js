@@ -1,4 +1,4 @@
-// Перевод описаний и разбор постов из каналов через Claude API.
+// Перевод описаний и разбор постов из каналов: Claude API (ANTHROPIC_API_KEY) или Groq (GROQ_API_KEY).
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
@@ -41,14 +41,57 @@ const EXTRACT_SYSTEM =
   'Цену бери ту, что указана для покупателя, а её условия пиши в price_note. ' +
   'Пост с несколькими машинами, отзыв клиента или реклама услуг: is_car_listing=false.';
 
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+
+// Подсказка для JSON-режима Groq: перечень полей схемы.
+function fieldsHint(schema) {
+  const shape = schema.shape || {};
+  return Object.entries(shape).map(([k, v]) => `${k}${v.description ? ` (${v.description})` : ''}`).join('; ');
+}
+
 export class LLM {
   constructor() {
-    this.enabled = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
-    this.client = this.enabled ? new Anthropic() : null;
-    if (!this.enabled) console.warn('[llm] ANTHROPIC_API_KEY не задан: перевод и разбор постов выключены');
+    this.groqKey = process.env.GROQ_API_KEY || null;
+    const anthropic = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+    this.enabled = anthropic || !!this.groqKey;
+    this.client = anthropic ? new Anthropic() : null;
+    if (!this.enabled) console.warn('[llm] нет ANTHROPIC_API_KEY или GROQ_API_KEY: перевод и разбор постов выключены');
+    else console.log(`[llm] ${this.client ? `Claude ${MODEL}` : `Groq ${GROQ_MODEL}`}`);
+  }
+
+  async #groq(system, text, schema) {
+    const body = {
+      model: GROQ_MODEL,
+      temperature: 0.1,
+      max_tokens: 2000,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: `${system}\nОтветь только JSON-объектом с полями: ${fieldsHint(schema)}. Отсутствующее ставь null.` },
+        { role: 'user', content: text },
+      ],
+    };
+    for (let i = 0; i < 3; i++) {
+      try {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.groqKey}` },
+          body: JSON.stringify(body), signal: AbortSignal.timeout(60_000),
+        });
+        if (r.status === 429) { await new Promise((res) => setTimeout(res, 5000 * (i + 1))); continue; }
+        const data = await r.json();
+        if (!r.ok) { console.error(`[llm] Groq ${r.status}: ${data?.error?.message}`); return null; }
+        const parsed = schema.safeParse(JSON.parse(data.choices[0].message.content));
+        return parsed.success ? parsed.data : null;
+      } catch (e) {
+        console.error('[llm] Groq', e.message);
+        return null;
+      }
+    }
+    console.warn('[llm] Groq: лимит запросов, пропускаю');
+    return null;
   }
 
   async #parse(system, text, schema) {
+    if (!this.client) return this.#groq(system, text, schema);
     try {
       const resp = await this.client.messages.parse({
         model: MODEL,
