@@ -102,6 +102,10 @@ const listFingerprint = (l) => `${l.price}|${l.mileage_km}`;
 
 async function collectChannels(client, sender, state, rates, llm) {
   const out = [];
+  // Без Claude API посты не разобрать: каналы не трогаем, чтобы не сдвигать отметку «прочитано».
+  if (!llm.enabled) { console.log('[tg] каналы пропущены: нет ANTHROPIC_API_KEY'); return out; }
+  // Первый запуск с ключом: перечитать каналы заново (раньше их могли пролистать без разбора).
+  if (!state.data.channelsWithLlm) { state.data.channels = {}; state.data.channelsWithLlm = true; }
   for (const ch of cfg.channels || []) {
     try {
       const last = state.channelLastId(ch);
