@@ -1,0 +1,50 @@
+# Как часто обходить источники, минут.
+interval_minutes: 30
+
+# Сколько свежих объявлений брать за проход с каждой модели на Encar.
+encar_per_model: 40
+
+# Что искать на Encar. Марка и модель указываются по-корейски (так их ищет сам Encar),
+# а brand/model — каноническое имя, которое увидит пользователь бота.
+# car_type: Y — корейские марки, N — импортные.
+encar:
+  - { brand: Hyundai, model: Staria,       ko_brand: 현대, ko_model: 스타리아,     car_type: Y }
+  - { brand: Hyundai, model: Grand Starex, ko_brand: 현대, ko_model: 스타렉스,     car_type: Y }
+  - { brand: Hyundai, model: Palisade,     ko_brand: 현대, ko_model: 팰리세이드,   car_type: Y }
+  - { brand: Hyundai, model: Santa Fe,     ko_brand: 현대, ko_model: 싼타페,       car_type: Y }
+  - { brand: Hyundai, model: Tucson,       ko_brand: 현대, ko_model: 투싼,         car_type: Y }
+  - { brand: Kia,     model: Carnival,     ko_brand: 기아, ko_model: 카니발,       car_type: Y }
+  - { brand: Kia,     model: Sorento,      ko_brand: 기아, ko_model: 쏘렌토,       car_type: Y }
+  - { brand: Kia,     model: Sportage,     ko_brand: 기아, ko_model: 스포티지,     car_type: Y }
+  - { brand: Genesis, model: GV80,         ko_brand: 제네시스, ko_model: GV80,     car_type: Y }
+
+# Telegram-каналы продавцов. Аккаунт сборщика должен быть на них подписан (сборщик подпишется сам).
+channels:
+  - vincar_auto
+  - vectordriven
+  - LikeAvto_China
+  - asiamotorsvl
+  - Kou_AUTO
+  - banzaiauto125
+  - AutoKoreaCrimea_2023
+  - asia_prigon
+  - dolgov_auto
+  - mospodbor
+  - sferacar_ru_china
+  - japantradevl
+  - dss_export
+  - avtohosting
+  - topcarimport
+  - nikauto_krd23
+  - rogovmobil
+  - automaniaykt
+  - pandacar_ru
+  - otradacars_trade
+  - noharaautos
+  - worldcar_ru
+  - russianchinese
+  - ab_korea
+  - encarsused
+
+# Сколько последних постов смотреть в канале при первом запуске.
+channel_backfill: 30

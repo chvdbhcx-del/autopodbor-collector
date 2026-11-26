@@ -1,0 +1,20 @@
+{
+  "name": "autopodbor-collector",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "login": "node src/login.js",
+    "start": "node src/main.js",
+    "once": "node src/main.js --once",
+    "test": "node --test test/collector.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.14.0",
+    "dotenv": "^16.4.5",
+    "telegram": "^2.26.22",
+    "undici": "^6.21.0",
+    "yaml": "^2.6.0",
+    "zod": "^4.1.0"
+  }
+}

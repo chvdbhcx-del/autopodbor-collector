@@ -1,0 +1,24 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Direct
+        run: node probe/reach.mjs
+      - name: Tunnel up
+        env: { WG_CONF: '${{ secrets.WG_CONF }}' }
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq wireguard-tools >/dev/null
+          printf '%s\n' "$WG_CONF" | grep -v '^DNS' | sudo tee /etc/wireguard/wg0.conf >/dev/null
+          sudo chmod 600 /etc/wireguard/wg0.conf
+          sudo wg-quick up wg0
+      - name: Through tunnel
+        run: node probe/reach.mjs
+      - name: Tunnel down
+        if: always()
+        run: sudo wg-quick down wg0 || true
