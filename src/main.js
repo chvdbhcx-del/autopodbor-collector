@@ -11,6 +11,8 @@ import { LLM } from './llm.js';
 import { toBot, fingerprint } from './listing.js';
 import { makeClient, BotSender } from './tg.js';
 import { decryptSession } from './session.js';
+import { CustomFile } from 'telegram/client/uploads.js';
+import { UA } from './http.js';
 import { ensureJoined, readNewPosts, looksLikeListing, postToListing, sleep } from './sources/channels.js';
 
 const cfg = YAML.parse(fs.readFileSync(new URL('../config.yaml', import.meta.url), 'utf8'));
@@ -42,6 +44,7 @@ async function collectSites(state, rates, llm) {
         const list = await mod.search(brand, model, { rates, isKnown });
         for (const l of list) {
           l.price_rub = rates.toRub(l.price, l.currency);
+          if (mod.PHOTO_HEADERS) l._photoHeaders = mod.PHOTO_HEADERS;
           l._listFp = listFingerprint(l);
           out.push(l);
         }
@@ -114,6 +117,18 @@ async function runOnce(client, sender, state, rates, llm) {
   const firstRun = Object.keys(state.data.sent).length === 0;
   await rates.refresh();
   const fromSites = await collectSites(state, rates, llm);
+  // Фото площадок, которые не отдают картинки без своего Referer: качаем сами и шлём боту файлами.
+  for (const l of fromSites) {
+    if (!l._photoHeaders || !l.photos?.length) continue;
+    const files = [];
+    for (const [i, u] of l.photos.slice(0, 20).entries()) {
+      try {
+        const r = await fetch(u, { headers: { 'User-Agent': UA, ...l._photoHeaders }, signal: AbortSignal.timeout(20_000) });
+        if (r.ok) { const b = Buffer.from(await r.arrayBuffer()); files.push(new CustomFile(`${i}.jpg`, b.length, '', b)); }
+      } catch { /* пропуск */ }
+    }
+    if (files.length) { await sender.sendPhotos(l.uid, files); l.photos = []; }
+  }
   if (fromSites.length) await sendAll(sender, state, fromSites, firstRun);
   const fromTg = await collectChannels(client, sender, state, rates, llm);
   if (fromTg.length) await sendAll(sender, state, fromTg, firstRun);
