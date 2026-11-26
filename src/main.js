@@ -178,6 +178,7 @@ async function main() {
   console.log(`[tg] вошёл как ${me.firstName || ''} (id ${me.id}). Этот id укажите боту как ingest_user_ids.`);
 
   const sender = new BotSender(client, bot);
+  await sender.clearChat();
   const state = new State(new URL('../state.json', import.meta.url).pathname);
   const rates = new Rates();
   const llm = new LLM();
