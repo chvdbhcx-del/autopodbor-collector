@@ -30,13 +30,22 @@ async function pool(items, n, fn) {
 }
 
 // Площадки из config.yaml → sites. Каждая: src/sources/<name>.js с MODELS и search().
-async function collectSites(state, rates, llm) {
+// Площадки идут параллельно, модели внутри площадки по очереди. Найденное по каждой модели
+// сразу переводится и уходит в бот (emit), чтобы долгий первый проход не терял работу.
+// После deadline новые модели не начинаются: остаток доберёт следующий запуск.
+async function collectSites(state, rates, llm, emit, deadline) {
   const names = cfg.sites || [];
-  const perSite = await Promise.all(names.map(async (name) => {
+  let total = 0;
+  await Promise.all(names.map(async (name) => {
     let mod;
-    try { mod = await import(`./sources/${name}.js`); } catch (e) { console.warn(`[${name}] модуль не загружен: ${e.message}`); return []; }
-    const out = [];
-    for (const key of Object.keys(mod.MODELS || {})) {
+    try { mod = await import(`./sources/${name}.js`); } catch (e) { console.warn(`[${name}] модуль не загружен: ${e.message}`); return; }
+    // Каждый запуск начинаем с другой модели, чтобы при нехватке времени модели обходились по кругу.
+    const keys = Object.keys(mod.MODELS || {});
+    const start = (state.data.siteCursor?.[name] || 0) % Math.max(keys.length, 1);
+    const order = keys.slice(start).concat(keys.slice(0, start));
+    let done = 0;
+    for (const key of order) {
+      if (Date.now() > deadline) { console.log(`[${name}] время вышло, продолжу со следующего запуска`); break; }
       const [brand, model] = key.split('|');
       // Уже отправленное и не изменившееся (цена, пробег) не перекачиваем.
       const isKnown = (l) => state.data.sent[l.uid]?.listFp === listFingerprint(l);
@@ -46,18 +55,25 @@ async function collectSites(state, rates, llm) {
           l.price_rub = rates.toRub(l.price, l.currency);
           if (mod.PHOTO_HEADERS) l._photoHeaders = mod.PHOTO_HEADERS;
           l._listFp = listFingerprint(l);
-          out.push(l);
         }
-        console.log(`[${name}] ${brand} ${model}: ${list.length}`);
+        const fresh = list.filter((l) => !state.isUnchanged(l.uid, fingerprint(l)));
+        await translateAll(fresh, state, llm);
+        if (fresh.length) await emit(fresh);
+        total += fresh.length;
+        console.log(`[${name}] ${brand} ${model}: найдено ${list.length}, отправлено ${fresh.length}`);
       } catch (e) {
         console.warn(`[${name}] ${brand} ${model}: ${e.message}`);
       }
+      done++;
       await sleep(1000);
     }
-    return out;
+    state.data.siteCursor = { ...(state.data.siteCursor || {}), [name]: start + done };
   }));
-  const fresh = perSite.flat().filter((l) => !state.isUnchanged(l.uid, fingerprint(l)));
-  await pool(fresh, 3, async (l) => {
+  return total;
+}
+
+async function translateAll(list, state, llm) {
+  await pool(list, 3, async (l) => {
     if (!l.desc_orig || l.desc_ru) return;
     const cached = state.cachedTranslation(l.uid, l.desc_orig);
     if (cached && cached.desc_ru) { Object.assign(l, cached); return; }
@@ -65,7 +81,21 @@ async function collectSites(state, rates, llm) {
     const t = await llm.translate(`${l.brand} ${l.model} ${l.trim || ''}`.trim(), l.desc_orig, specs);
     if (t) { l.title_ru = t.title_ru; l.desc_ru = t.desc_ru; }
   });
-  return fresh;
+}
+
+// Фото площадок, которые не отдают картинки без своего Referer: качаем сами и шлём боту файлами.
+async function uploadProtectedPhotos(sender, list) {
+  for (const l of list) {
+    if (!l._photoHeaders || !l.photos?.length) continue;
+    const files = [];
+    for (const [i, u] of l.photos.slice(0, 20).entries()) {
+      try {
+        const r = await fetch(u, { headers: { 'User-Agent': UA, ...l._photoHeaders }, signal: AbortSignal.timeout(20_000) });
+        if (r.ok) { const b = Buffer.from(await r.arrayBuffer()); files.push(new CustomFile(`${i}.jpg`, b.length, '', b)); }
+      } catch { /* пропуск */ }
+    }
+    if (files.length) { await sender.sendPhotos(l.uid, files); l.photos = []; }
+  }
 }
 
 const listFingerprint = (l) => `${l.price}|${l.mileage_km}`;
@@ -116,25 +146,21 @@ async function runOnce(client, sender, state, rates, llm) {
   const t0 = Date.now();
   const firstRun = Object.keys(state.data.sent).length === 0;
   await rates.refresh();
-  const fromSites = await collectSites(state, rates, llm);
-  // Фото площадок, которые не отдают картинки без своего Referer: качаем сами и шлём боту файлами.
-  for (const l of fromSites) {
-    if (!l._photoHeaders || !l.photos?.length) continue;
-    const files = [];
-    for (const [i, u] of l.photos.slice(0, 20).entries()) {
-      try {
-        const r = await fetch(u, { headers: { 'User-Agent': UA, ...l._photoHeaders }, signal: AbortSignal.timeout(20_000) });
-        if (r.ok) { const b = Buffer.from(await r.arrayBuffer()); files.push(new CustomFile(`${i}.jpg`, b.length, '', b)); }
-      } catch { /* пропуск */ }
-    }
-    if (files.length) { await sender.sendPhotos(l.uid, files); l.photos = []; }
-  }
-  if (fromSites.length) await sendAll(sender, state, fromSites, firstRun);
+  // Каналы и подписки первыми: они быстрые и важнее всего.
   const fromTg = await collectChannels(client, sender, state, rates, llm);
   if (fromTg.length) await sendAll(sender, state, fromTg, firstRun);
-  // Подписки по площадкам, которые бот опрашивает сам (Encar, Drom, Goo-net, AutoScout24).
   try { await sender.refresh(); } catch (e) { console.warn('[refresh]', e.message); }
-  console.log(`[run] отправлено ${fromSites.length + fromTg.length} (площадки ${fromSites.length}, каналы ${fromTg.length}) за ${Math.round((Date.now() - t0) / 1000)} с`);
+  // Отправка в бот по одному пакету за раз: площадки шлют найденное по мере готовности.
+  let chain = Promise.resolve();
+  const emit = (list) => (chain = chain.then(async () => {
+    await uploadProtectedPhotos(sender, list);
+    await sendAll(sender, state, list, firstRun);
+  }).catch((e) => console.warn('[send]', e.message)));
+  const deadline = t0 + (cfg.run_minutes || 38) * 60_000;
+  const fromSites = await collectSites(state, rates, llm, emit, deadline);
+  await chain;
+  state.save();
+  console.log(`[run] отправлено ${fromSites + fromTg.length} (площадки ${fromSites}, каналы ${fromTg.length}) за ${Math.round((Date.now() - t0) / 1000)} с`);
 }
 
 async function main() {
