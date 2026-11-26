@@ -23,7 +23,7 @@ test('encar list item -> listing', () => {
   enrichFromDetail(l, { photos: [{ path: '/carpicture08/x_001.jpg' }], contents: { text: '무사고 1인 신조' }, spec: { seatCount: 9, displacement: 2199 } });
   assert.equal(l.seats, 9); assert.equal(l.engine, '2.2 л'); assert.equal(l.desc_orig, '무사고 1인 신조');
   const b = toBot(l);
-  assert.ok(!('desc_orig' in b));
+  assert.ok('desc_orig' in b);
   assert.equal(typeof fingerprint(l), 'string');
   assert.match(buildQuery(W), /Manufacturer\.현대\._\.ModelGroup\.스타리아\./);
   assert.deepEqual(yearMonth(2021), [2021, null]);
@@ -58,4 +58,15 @@ test('channel posts: albums merged, LLM fields mapped', async () => {
   assert.equal(l.price_rub, 2650000);
   assert.equal(l.from_text, true);
   assert.equal(l._media.length, 2);
+});
+
+test('channel: albums of one car posted in a row are merged', async () => {
+  const { mergeAlbums } = await import('../src/sources/channels.js');
+  const posts = mergeAlbums([
+    { id: 10, date: 1000, text: 'Kia Carnival 2022, цена 3 млн', photos: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+    { id: 20, date: 1010, text: '', photos: [11, 12, 13, 14, 15] },
+    { id: 30, date: 5000, text: 'Hyundai Staria 2023', photos: [1] },
+  ]);
+  assert.equal(posts.length, 2);
+  assert.equal(posts[0].photos.length, 15);
 });

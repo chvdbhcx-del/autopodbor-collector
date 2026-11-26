@@ -27,7 +27,26 @@ export async function readNewPosts(client, channel, lastId, backfill = 30) {
     p.id = Math.min(p.id, m.id);
   }
   const maxId = msgs.reduce((a, m) => Math.max(a, m?.id || 0), lastId || 0);
-  return { posts: [...posts.values()], maxId };
+  return { posts: mergeAlbums([...posts.values()]), maxId };
+}
+
+// Продавцы часто выкладывают одну машину несколькими альбомами подряд (в альбоме максимум 10 фото),
+// а текст есть только у одного из них. Альбом без текста, вышедший в пределах 3 минут,
+// приклеиваем к соседнему посту с текстом.
+export function mergeAlbums(list, gapSec = 180) {
+  const out = [];
+  for (const p of list) {
+    const prev = out[out.length - 1];
+    const close = prev && Math.abs((p.date || 0) - (prev.date || 0)) <= gapSec;
+    if (close && p.photos.length && (!p.text || !prev.text)) {
+      prev.text = prev.text || p.text;
+      prev.photos.push(...p.photos);
+      prev.id = Math.min(prev.id, p.id);
+      continue;
+    }
+    out.push(p);
+  }
+  return out;
 }
 
 // Быстрый фильтр до LLM: без цифр года/цены и без фото это не объявление.

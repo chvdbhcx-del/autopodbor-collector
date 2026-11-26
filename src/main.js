@@ -1,4 +1,5 @@
-// Сборщик: обходит Encar и Telegram-каналы, переводит, шлёт пакеты в бот.
+// Сборщик: обходит площадки, закрытые для серверов бота, и Telegram-каналы, переводит, шлёт пакеты в бот.
+// В конце просит бот обновить подписки по площадкам, которые бот опрашивает сам («#refresh»).
 //   npm start        — работать постоянно, проход раз в interval_minutes
 //   npm run once     — один проход и выход (для cron)
 import 'dotenv/config';
@@ -9,7 +10,6 @@ import { Rates } from './rates.js';
 import { LLM } from './llm.js';
 import { toBot, fingerprint } from './listing.js';
 import { makeClient, BotSender } from './tg.js';
-import * as encar from './sources/encar.js';
 import { ensureJoined, readNewPosts, looksLikeListing, postToListing, sleep } from './sources/channels.js';
 
 const cfg = YAML.parse(fs.readFileSync(new URL('../config.yaml', import.meta.url), 'utf8'));
@@ -26,32 +26,45 @@ async function pool(items, n, fn) {
   return out;
 }
 
-async function collectEncar(state, rates, llm) {
-  const fresh = [];
-  for (const w of cfg.encar || []) {
-    const list = await encar.fetchWatch(w, cfg.encar_per_model || 40);
-    for (const l of list) {
-      l.price_rub = rates.toRub(l.price, l.currency);
-      // Быстрая проверка по данным списка: если ничего не поменялось, карточку не грузим.
-      const listFp = fingerprint(l);
-      if (state.data.sent[l.uid]?.listFp === listFp) continue;
-      l._listFp = listFp;
-      fresh.push(l);
+// Площадки из config.yaml → sites. Каждая: src/sources/<name>.js с MODELS и search().
+async function collectSites(state, rates, llm) {
+  const names = cfg.sites || [];
+  const perSite = await Promise.all(names.map(async (name) => {
+    let mod;
+    try { mod = await import(`./sources/${name}.js`); } catch (e) { console.warn(`[${name}] модуль не загружен: ${e.message}`); return []; }
+    const out = [];
+    for (const key of Object.keys(mod.MODELS || {})) {
+      const [brand, model] = key.split('|');
+      // Уже отправленное и не изменившееся (цена, пробег) не перекачиваем.
+      const isKnown = (l) => state.data.sent[l.uid]?.listFp === listFingerprint(l);
+      try {
+        const list = await mod.search(brand, model, { rates, isKnown });
+        for (const l of list) {
+          l.price_rub = rates.toRub(l.price, l.currency);
+          l._listFp = listFingerprint(l);
+          out.push(l);
+        }
+        console.log(`[${name}] ${brand} ${model}: ${list.length}`);
+      } catch (e) {
+        console.warn(`[${name}] ${brand} ${model}: ${e.message}`);
+      }
+      await sleep(1000);
     }
-    await sleep(1500);
-  }
+    return out;
+  }));
+  const fresh = perSite.flat().filter((l) => !state.isUnchanged(l.uid, fingerprint(l)));
   await pool(fresh, 3, async (l) => {
-    await encar.fetchDetail(l);
+    if (!l.desc_orig || l.desc_ru) return;
     const cached = state.cachedTranslation(l.uid, l.desc_orig);
-    if (cached && cached.desc_ru) Object.assign(l, cached);
-    else {
-      const t = await llm.translate(`${l.brand} ${l.model} ${l.trim || ''}`.trim(), l.desc_orig, encar.specsLine(l));
-      if (t) { l.title_ru = t.title_ru; l.desc_ru = t.desc_ru; }
-    }
-    await sleep(800);
+    if (cached && cached.desc_ru) { Object.assign(l, cached); return; }
+    const specs = [l.year, l.mileage_km != null ? `${l.mileage_km} км` : null, l.engine, l.transmission].filter(Boolean).join(', ');
+    const t = await llm.translate(`${l.brand} ${l.model} ${l.trim || ''}`.trim(), l.desc_orig, specs);
+    if (t) { l.title_ru = t.title_ru; l.desc_ru = t.desc_ru; }
   });
   return fresh;
 }
+
+const listFingerprint = (l) => `${l.price}|${l.mileage_km}`;
 
 async function collectChannels(client, sender, state, rates, llm) {
   const out = [];
@@ -99,11 +112,13 @@ async function runOnce(client, sender, state, rates, llm) {
   const t0 = Date.now();
   const firstRun = Object.keys(state.data.sent).length === 0;
   await rates.refresh();
-  const fromEncar = await collectEncar(state, rates, llm);
+  const fromSites = await collectSites(state, rates, llm);
+  if (fromSites.length) await sendAll(sender, state, fromSites, firstRun);
   const fromTg = await collectChannels(client, sender, state, rates, llm);
-  const all = [...fromEncar, ...fromTg];
-  if (all.length) await sendAll(sender, state, all, firstRun);
-  console.log(`[run] отправлено ${all.length} (Encar ${fromEncar.length}, каналы ${fromTg.length}) за ${Math.round((Date.now() - t0) / 1000)} с`);
+  if (fromTg.length) await sendAll(sender, state, fromTg, firstRun);
+  // Подписки по площадкам, которые бот опрашивает сам (Encar, Drom, Goo-net, AutoScout24).
+  try { await sender.refresh(); } catch (e) { console.warn('[refresh]', e.message); }
+  console.log(`[run] отправлено ${fromSites.length + fromTg.length} (площадки ${fromSites.length}, каналы ${fromTg.length}) за ${Math.round((Date.now() - t0) / 1000)} с`);
 }
 
 async function main() {

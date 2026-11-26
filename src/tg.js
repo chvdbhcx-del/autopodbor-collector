@@ -24,17 +24,26 @@ export class BotSender {
   // Фото поста канала: бот запомнит file_id по подписи «#ingest <uid> <pos>».
   async sendPhotos(uid, photos) {
     if (!photos.length) return;
-    const list = photos.slice(0, 10);
-    try {
-      await this.client.sendFile(this.bot, { file: list, caption: list.map((_, i) => `#ingest ${uid} ${i}`) });
-    } catch (e) {
-      console.warn(`[send] альбом ${uid} не ушёл (${e.message}), шлю по одному`);
-      for (let i = 0; i < list.length; i++) {
-        try { await this.client.sendFile(this.bot, { file: list[i], caption: `#ingest ${uid} ${i}` }); } catch { /* пропуск */ }
-        await sleep(400);
+    // Все фото поста, пачками по 10 (больше Telegram в один альбом не берёт). Бот хранит до 60.
+    const all = photos.slice(0, 60);
+    for (let off = 0; off < all.length; off += 10) {
+      const list = all.slice(off, off + 10);
+      try {
+        await this.client.sendFile(this.bot, { file: list, caption: list.map((_, i) => `#ingest ${uid} ${off + i}`) });
+      } catch (e) {
+        console.warn(`[send] альбом ${uid} не ушёл (${e.message}), шлю по одному`);
+        for (let i = 0; i < list.length; i++) {
+          try { await this.client.sendFile(this.bot, { file: list[i], caption: `#ingest ${uid} ${off + i}` }); } catch { /* пропуск */ }
+          await sleep(400);
+        }
       }
+      await sleep(700);
     }
-    await sleep(700);
+  }
+
+  // Попросить бот обновить подписки по площадкам, которые он опрашивает сам.
+  async refresh() {
+    await this.client.sendMessage(this.bot, { message: '#refresh' });
   }
 
   // Пакет объявлений одним JSON-файлом.

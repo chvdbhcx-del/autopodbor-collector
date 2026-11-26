@@ -1,0 +1,55 @@
+name: collect
+# Раз в час: площадки, закрытые для бота, Telegram-каналы и обновление подписок.
+on:
+  schedule: [{ cron: '17 * * * *' }]
+  workflow_dispatch:
+permissions: { contents: write }
+concurrency: { group: collect, cancel-in-progress: false }
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      TG_API_ID: ${{ secrets.TG_API_ID }}
+      TG_API_HASH: ${{ secrets.TG_API_HASH }}
+      TG_SESSION: ${{ secrets.TG_SESSION }}
+      BOT_USERNAME: autosearchcorapt_bot
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-haiku-5-5' }}
+    steps:
+      - name: Check secrets
+        id: check
+        run: |
+          if [ -z "$TG_SESSION" ] || [ -z "$TG_API_ID" ]; then
+            echo "::notice::Нет TG_SESSION / TG_API_ID: сборщик не запущен (см. README)."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.skip != '1'
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.skip != '1'
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+        if: steps.check.outputs.skip != '1'
+      - name: Restore state
+        if: steps.check.outputs.skip != '1'
+        run: |
+          git fetch --depth 1 origin state 2>/dev/null && git show FETCH_HEAD:state.json > state.json || echo "первый запуск"
+      - name: Tunnel (if USE_WG=1)
+        if: steps.check.outputs.skip != '1' && vars.USE_WG == '1'
+        env: { WG_CONF: '${{ secrets.WG_CONF }}' }
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq wireguard-tools >/dev/null
+          printf '%s\n' "$WG_CONF" | grep -v '^DNS' | sudo tee /etc/wireguard/wg0.conf >/dev/null
+          sudo chmod 600 /etc/wireguard/wg0.conf && sudo wg-quick up wg0
+      - name: Collect
+        if: steps.check.outputs.skip != '1'
+        run: node src/main.js --once
+      - name: Save state
+        if: always() && steps.check.outputs.skip != '1'
+        run: |
+          [ -f state.json ] || exit 0
+          cp state.json /tmp/state.json
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git checkout --orphan state-tmp && git rm -rq --cached . && cp /tmp/state.json state.json
+          git add -f state.json && git commit -qm "state ${{ github.run_id }}" && git push -f origin HEAD:state
