@@ -6,6 +6,12 @@ interval_minutes: 60
 sites:
   - kcar
   - autowini
+  - autobell
+  - sbt
+  - beforward
+  - carsensor
+  - sbi
+  - olx
 
 # Telegram-каналы продавцов. Аккаунт сборщика должен быть на них подписан (сборщик подпишется сам).
 channels:

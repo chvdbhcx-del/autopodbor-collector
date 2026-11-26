@@ -9,7 +9,7 @@
     "login": "node src/login.js",
     "start": "node src/main.js",
     "once": "node src/main.js --once",
-    "test": "node --test test/collector.test.js test/kcar.test.js test/autowini.test.js"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.14.0",
