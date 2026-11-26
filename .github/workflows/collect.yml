@@ -65,7 +65,7 @@ jobs:
   # Только для публичного репозитория: там минуты бесплатные, ожидание ничего не стоит.
   next:
     needs: collect
-    if: always() && !github.event.repository.private && vars.CHAIN != '0'
+    if: always() && vars.CHAIN != '0'
     runs-on: ubuntu-latest
     timeout-minutes: 70
     steps:
@@ -74,6 +74,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           STARTED: ${{ needs.collect.outputs.started }}
         run: |
+          [ "$(gh api repos/${{ github.repository }} --jq .private)" = "false" ] || { echo "репозиторий закрытый: цепочка выключена"; exit 0; }
           now=$(date +%s); left=$(( ${STARTED:-$now} + 3600 - now ))
           [ "$left" -gt 0 ] && sleep "$left"
           gh api -X POST repos/${{ github.repository }}/actions/workflows/collect.yml/dispatches -f ref=${{ github.ref_name }}
