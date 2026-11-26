@@ -1,0 +1,28 @@
+name: login
+# Вход запасного Telegram-аккаунта по QR-коду. Запустите, откройте лог шага «QR login»
+# и отсканируйте QR телефоном с этим аккаунтом: Настройки → Устройства → Подключить устройство.
+on: workflow_dispatch
+permissions: { contents: write }
+concurrency: { group: collect, cancel-in-progress: false }
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TG_API_ID: ${{ secrets.TG_API_ID }}
+      TG_API_HASH: ${{ secrets.TG_API_HASH }}
+      TG_2FA: ${{ secrets.TG_2FA }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - name: QR login
+        run: node src/qrlogin.js
+      - name: Save encrypted session to state branch
+        run: |
+          cp session.enc /tmp/session.enc
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          if git fetch --depth 1 origin state 2>/dev/null; then git checkout -q -B state-tmp FETCH_HEAD; else git checkout -q --orphan state-tmp && git rm -rq --cached .; fi
+          cp /tmp/session.enc session.enc && git add -f session.enc
+          git commit -qm "session ${{ github.run_id }}" && git push -f origin HEAD:state

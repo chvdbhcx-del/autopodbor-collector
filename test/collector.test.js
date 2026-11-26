@@ -70,3 +70,10 @@ test('channel: albums of one car posted in a row are merged', async () => {
   assert.equal(posts.length, 2);
   assert.equal(posts[0].photos.length, 15);
 });
+
+test('session encrypt/decrypt roundtrip', async () => {
+  const { encryptSession, decryptSession } = await import('../src/session.js');
+  const enc = encryptSession('1BVtsOK-session', 'hash123');
+  assert.equal(decryptSession(enc, 'hash123'), '1BVtsOK-session');
+  assert.throws(() => decryptSession(enc, 'other'));
+});

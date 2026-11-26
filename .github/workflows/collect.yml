@@ -20,8 +20,8 @@ jobs:
       - name: Check secrets
         id: check
         run: |
-          if [ -z "$TG_SESSION" ] || [ -z "$TG_API_ID" ]; then
-            echo "::notice::Нет TG_SESSION / TG_API_ID: сборщик не запущен (см. README)."
+          if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; then
+            echo "::notice::Нет TG_API_ID / TG_API_HASH: сборщик не запущен (см. README)."
             echo "skip=1" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@v4
@@ -34,7 +34,9 @@ jobs:
       - name: Restore state
         if: steps.check.outputs.skip != '1'
         run: |
-          git fetch --depth 1 origin state 2>/dev/null && git show FETCH_HEAD:state.json > state.json || echo "первый запуск"
+          git fetch --depth 1 origin state 2>/dev/null || { echo "нет ветки state: сначала запустите workflow login"; exit 1; }
+          git show FETCH_HEAD:session.enc > session.enc 2>/dev/null || [ -n "$TG_SESSION" ] || { echo "нет session.enc: запустите workflow login"; exit 1; }
+          git show FETCH_HEAD:state.json > state.json 2>/dev/null || echo "первый запуск"
       - name: Tunnel (if USE_WG=1)
         if: steps.check.outputs.skip != '1' && vars.USE_WG == '1'
         env: { WG_CONF: '${{ secrets.WG_CONF }}' }
@@ -49,7 +51,8 @@ jobs:
         if: always() && steps.check.outputs.skip != '1'
         run: |
           [ -f state.json ] || exit 0
-          cp state.json /tmp/state.json
+          cp state.json /tmp/state.json; [ -f session.enc ] && cp session.enc /tmp/session.enc
           git config user.name ci && git config user.email ci@users.noreply.github.com
-          git checkout --orphan state-tmp && git rm -rq --cached . && cp /tmp/state.json state.json
+          git checkout -q --orphan state-tmp && git rm -rq --cached . && cp /tmp/state.json state.json
+          [ -f /tmp/session.enc ] && cp /tmp/session.enc session.enc && git add -f session.enc
           git add -f state.json && git commit -qm "state ${{ github.run_id }}" && git push -f origin HEAD:state

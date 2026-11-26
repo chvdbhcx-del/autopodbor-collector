@@ -10,6 +10,7 @@ import { Rates } from './rates.js';
 import { LLM } from './llm.js';
 import { toBot, fingerprint } from './listing.js';
 import { makeClient, BotSender } from './tg.js';
+import { decryptSession } from './session.js';
 import { ensureJoined, readNewPosts, looksLikeListing, postToListing, sleep } from './sources/channels.js';
 
 const cfg = YAML.parse(fs.readFileSync(new URL('../config.yaml', import.meta.url), 'utf8'));
@@ -124,7 +125,11 @@ async function runOnce(client, sender, state, rates, llm) {
 async function main() {
   const bot = process.env.BOT_USERNAME;
   if (!bot) throw new Error('Заполните BOT_USERNAME в .env');
-  if (!process.env.TG_SESSION) throw new Error('Нет TG_SESSION: сначала выполните npm run login');
+  // В Actions сессия лежит зашифрованной в ветке state (её создаёт workflow «login»).
+  if (!process.env.TG_SESSION && fs.existsSync('session.enc') && process.env.TG_API_HASH) {
+    process.env.TG_SESSION = decryptSession(fs.readFileSync('session.enc', 'utf8'), process.env.TG_API_HASH);
+  }
+  if (!process.env.TG_SESSION) throw new Error('Нет TG_SESSION: сначала выполните вход (workflow «login» или npm run login)');
   const client = makeClient();
   await client.connect();
   if (!(await client.checkAuthorization())) throw new Error('Сессия недействительна: выполните npm run login заново');
