@@ -58,7 +58,8 @@ async function collectSites(state, rates, llm, emit, deadline) {
         }
         const fresh = list.filter((l) => !state.isUnchanged(l.uid, fingerprint(l)));
         await translateAll(fresh, state, llm);
-        if (fresh.length) await emit(fresh);
+        // Отправка идёт своей очередью, площадка не ждёт её и берёт следующую модель.
+        if (fresh.length) emit(fresh);
         total += fresh.length;
         console.log(`[${name}] ${brand} ${model}: найдено ${list.length}, отправлено ${fresh.length}`);
       } catch (e) {
