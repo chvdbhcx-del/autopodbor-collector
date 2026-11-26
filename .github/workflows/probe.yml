@@ -13,6 +13,7 @@ jobs:
       - name: Tunnel up
         env: { WG_CONF: '${{ secrets.WG_CONF }}' }
         run: |
+          [ -n "$WG_CONF" ] || { echo 'нет секрета WG_CONF'; exit 1; }
           sudo apt-get update -qq && sudo apt-get install -y -qq wireguard-tools >/dev/null
           printf '%s\n' "$WG_CONF" | grep -v '^DNS' | sudo tee /etc/wireguard/wg0.conf >/dev/null
           sudo chmod 600 /etc/wireguard/wg0.conf
