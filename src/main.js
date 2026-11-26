@@ -125,13 +125,15 @@ async function collectChannels(client, sender, state, rates, llm) {
   // Без Claude API посты не разобрать: каналы не трогаем, чтобы не сдвигать отметку «прочитано».
   if (!llm.enabled) { console.log('[tg] каналы пропущены: нет ANTHROPIC_API_KEY'); return out; }
   // Первый запуск с ключом: перечитать каналы заново (раньше их могли пролистать без разбора).
-  if (!state.data.channelsWithLlm) { state.data.channels = {}; state.data.channelsWithLlm = true; }
+  // (v2: прошлый проход шёл на снятой модели Groq и ничего не разобрал.)
+  if (state.data.channelsWithLlm !== 2) { state.data.channels = {}; state.data.channelsWithLlm = 2; }
   for (const ch of cfg.channels || []) {
     try {
       const last = state.channelLastId(ch);
       if (last == null) await ensureJoined(client, ch);
       const { posts, maxId } = await readNewPosts(client, ch, last, cfg.channel_backfill || 30);
       let found = 0;
+      const errs0 = llm.apiErrors;
       for (const p of posts) {
         if (!looksLikeListing(p)) continue;
         const l = await postToListing(llm, rates, ch, p);
@@ -142,6 +144,8 @@ async function collectChannels(client, sender, state, rates, llm) {
         out.push(l);
         found++;
       }
+      // Ключ или модель не работают: посты не разобраны, перечитаем их в следующий раз.
+      if (llm.apiErrors > errs0) { console.warn(`[tg] @${ch}: ошибки LLM, отметку не сдвигаю`); continue; }
       state.setChannelLastId(ch, maxId);
       state.save();
       console.log(`[tg] @${ch}: постов ${posts.length}, объявлений ${found}`);

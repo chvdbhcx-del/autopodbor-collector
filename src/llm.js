@@ -41,7 +41,13 @@ const EXTRACT_SYSTEM =
   'Цену бери ту, что указана для покупателя, а её условия пиши в price_note. ' +
   'Пост с несколькими машинами, отзыв клиента или реклама услуг: is_car_listing=false.';
 
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+// Groq снимает модели с линейки без предупреждения: при 404 берём первую доступную из списка.
+export const GROQ_PREFERRED = ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile'];
+let GROQ_MODEL = process.env.GROQ_MODEL || GROQ_PREFERRED[0];
+
+export function pickGroqModel(available, current) {
+  return GROQ_PREFERRED.find((m) => m !== current && available.includes(m)) || null;
+}
 
 // Подсказка для JSON-режима Groq: перечень полей схемы.
 function fieldsHint(schema) {
@@ -52,11 +58,25 @@ function fieldsHint(schema) {
 export class LLM {
   constructor() {
     this.groqKey = process.env.GROQ_API_KEY || null;
+    // Ошибки API (не «пост не про машину»): по ним main.js не сдвигает отметку прочитанного в каналах.
+    this.apiErrors = 0;
     const anthropic = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
     this.enabled = anthropic || !!this.groqKey;
     this.client = anthropic ? new Anthropic() : null;
     if (!this.enabled) console.warn('[llm] нет ANTHROPIC_API_KEY или GROQ_API_KEY: перевод и разбор постов выключены');
     else console.log(`[llm] ${this.client ? `Claude ${MODEL}` : `Groq ${GROQ_MODEL}`}`);
+  }
+
+  async #switchGroqModel() {
+    try {
+      const r = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${this.groqKey}` }, signal: AbortSignal.timeout(20_000) });
+      const ids = ((await r.json()).data || []).map((m) => m.id);
+      const next = pickGroqModel(ids, GROQ_MODEL);
+      if (!next) return false;
+      console.log(`[llm] Groq: модели ${GROQ_MODEL} нет, перехожу на ${next}`);
+      GROQ_MODEL = next;
+      return true;
+    } catch { return false; }
   }
 
   async #groq(system, text, schema) {
@@ -78,14 +98,17 @@ export class LLM {
         });
         if (r.status === 429) { await new Promise((res) => setTimeout(res, 5000 * (i + 1))); continue; }
         const data = await r.json();
-        if (!r.ok) { console.error(`[llm] Groq ${r.status}: ${data?.error?.message}`); return null; }
+        if (r.status === 404 && /model/i.test(data?.error?.message || '') && await this.#switchGroqModel()) { body.model = GROQ_MODEL; continue; }
+        if (!r.ok) { this.apiErrors++; console.error(`[llm] Groq ${r.status}: ${data?.error?.message}`); return null; }
         const parsed = schema.safeParse(JSON.parse(data.choices[0].message.content));
         return parsed.success ? parsed.data : null;
       } catch (e) {
+        this.apiErrors++;
         console.error('[llm] Groq', e.message);
         return null;
       }
     }
+    this.apiErrors++;
     console.warn('[llm] Groq: лимит запросов, пропускаю');
     return null;
   }
@@ -104,6 +127,7 @@ export class LLM {
       if (resp.stop_reason === 'refusal') return null;
       return resp.parsed_output ?? null;
     } catch (e) {
+      this.apiErrors++;
       if (e instanceof Anthropic.RateLimitError) console.warn('[llm] лимит запросов, пропускаю до следующего прохода');
       else if (e instanceof Anthropic.APIError) console.error(`[llm] ошибка API ${e.status}: ${e.message}`);
       else console.error('[llm]', e.message);
