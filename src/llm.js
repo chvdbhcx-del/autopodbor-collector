@@ -63,6 +63,7 @@ export class LLM {
     const anthropic = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
     this.enabled = anthropic || !!this.groqKey;
     this.client = anthropic ? new Anthropic() : null;
+    this.provider = anthropic ? 'claude' : this.groqKey ? 'groq' : null;
     if (!this.enabled) console.warn('[llm] нет ANTHROPIC_API_KEY или GROQ_API_KEY: перевод и разбор постов выключены');
     else console.log(`[llm] ${this.client ? `Claude ${MODEL}` : `Groq ${GROQ_MODEL}`}`);
   }
@@ -90,13 +91,18 @@ export class LLM {
         { role: 'user', content: text },
       ],
     };
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
       try {
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.groqKey}` },
           body: JSON.stringify(body), signal: AbortSignal.timeout(60_000),
         });
-        if (r.status === 429) { await new Promise((res) => setTimeout(res, 5000 * (i + 1))); continue; }
+        if (r.status === 429) {
+          // Groq говорит, сколько ждать; дольше минуты не ждём.
+          const wait = Math.min(60, Number(r.headers.get('retry-after')) || 5 * (i + 1));
+          await new Promise((res) => setTimeout(res, wait * 1000));
+          continue;
+        }
         const data = await r.json();
         if (r.status === 404 && /model/i.test(data?.error?.message || '') && await this.#switchGroqModel()) { body.model = GROQ_MODEL; continue; }
         if (!r.ok) { this.apiErrors++; console.error(`[llm] Groq ${r.status}: ${data?.error?.message}`); return null; }

@@ -80,6 +80,8 @@ async function collectSites(state, rates, llm, emit, deadline) {
 }
 
 async function translateAll(list, state, llm) {
+  // На бесплатном Groq лимит уходит на каналы; описания площадок бот переводит сам при просмотре.
+  if (llm.provider === 'groq') return;
   await pool(list, 3, async (l) => {
     if (!l.desc_orig || l.desc_ru) return;
     const cached = state.cachedTranslation(l.uid, l.desc_orig);
@@ -132,11 +134,15 @@ async function collectChannels(client, sender, state, rates, llm) {
       const last = state.channelLastId(ch);
       if (last == null) await ensureJoined(client, ch);
       const { posts, maxId } = await readNewPosts(client, ch, last, cfg.channel_backfill || 30);
-      let found = 0;
-      const errs0 = llm.apiErrors;
+      let found = 0, cand = 0;
+      let upTo = maxId;
       for (const p of posts) {
         if (!looksLikeListing(p)) continue;
+        cand++;
+        const errs0 = llm.apiErrors;
         const l = await postToListing(llm, rates, ch, p);
+        // Ошибка LLM (лимит, ключ): этот пост и следующие перечитаем в следующий раз.
+        if (llm.apiErrors > errs0) { upTo = p.id - 1; console.warn(`[tg] @${ch}: ошибка LLM, продолжу с поста ${p.id}`); break; }
         if (!l) continue;
         // Фото — раньше JSON: так у уведомления подписчикам уже будет альбом.
         await sender.sendPhotos(l.uid, l._media);
@@ -144,11 +150,9 @@ async function collectChannels(client, sender, state, rates, llm) {
         out.push(l);
         found++;
       }
-      // Ключ или модель не работают: посты не разобраны, перечитаем их в следующий раз.
-      if (llm.apiErrors > errs0) { console.warn(`[tg] @${ch}: ошибки LLM, отметку не сдвигаю`); continue; }
-      state.setChannelLastId(ch, maxId);
+      state.setChannelLastId(ch, upTo);
       state.save();
-      console.log(`[tg] @${ch}: постов ${posts.length}, объявлений ${found}`);
+      console.log(`[tg] @${ch}: постов ${posts.length}, похожих ${cand}, объявлений ${found}`);
     } catch (e) {
       console.warn(`[tg] @${ch}: ${e.message}`);
     }
