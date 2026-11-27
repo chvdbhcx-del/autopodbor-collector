@@ -32,6 +32,8 @@ async function pool(items, n, fn) {
 // сразу переводится и уходит в бот (emit), чтобы долгий первый проход не терял работу.
 // После deadline новые модели не начинаются: остаток доберёт следующий запуск.
 const seenUids = new Set();
+// Отчёт прохода для /health в боте: по каждой площадке сколько запросов прошло, упало и что нашлось.
+const report = { sites: {}, channels: { ok: 0, errors: 0, found: 0, sent: 0 } };
 
 async function collectSites(state, rates, llm, emit, deadline) {
   const names = cfg.sites || [];
@@ -44,6 +46,7 @@ async function collectSites(state, rates, llm, emit, deadline) {
     const start = (state.data.siteCursor?.[name] || 0) % Math.max(keys.length, 1);
     const order = keys.slice(start).concat(keys.slice(0, start));
     let done = 0;
+    const st = (report.sites[name] = { ok: 0, errors: 0, found: 0, sent: 0, models: keys.length });
     for (const key of order) {
       if (Date.now() > deadline) { console.log(`[${name}] время вышло, продолжу со следующего запуска`); break; }
       const [brand, model] = key.split('|');
@@ -55,11 +58,16 @@ async function collectSites(state, rates, llm, emit, deadline) {
       };
       try {
         const list = await mod.search(brand, model, { rates, isKnown });
+        st.ok++;
+        st.found += list.length;
         for (const l of list) {
           l.price_rub = rates.toRub(l.price, l.currency);
           l._listFp = listFingerprint(l);
         }
         const fresh = list.filter((l) => !state.isUnchanged(l.uid, fingerprint(l)));
+        // Неизменившиеся тоже всё ещё висят на площадке: бот продлит им жизнь.
+        for (const l of list) if (!fresh.includes(l)) seenUids.add(l.uid);
+        st.sent += fresh.length;
         await translateAll(fresh, state, llm);
         // Отправка идёт своей очередью, площадка не ждёт её и берёт следующую модель.
         if (fresh.length) emit(fresh);
@@ -67,6 +75,8 @@ async function collectSites(state, rates, llm, emit, deadline) {
         console.log(`[${name}] ${brand} ${model}: найдено ${list.length}, отправлено ${fresh.length}`);
       } catch (e) {
         console.warn(`[${name}] ${brand} ${model}: ${e.message}`);
+        st.errors++;
+        st.lastError = String(e.message || e).slice(0, 200);
       }
       done++;
       await sleep(1000);
@@ -123,10 +133,15 @@ async function collectChannels(client, sender, state, rates, llm) {
         found++;
       }
       state.setChannelLastId(ch, upTo);
+      report.channels.ok++;
+      report.channels.found += found;
+      report.channels.sent += found;
       state.save();
       console.log(`[tg] @${ch}: постов ${posts.length}, похожих ${cand}, объявлений ${found}`);
     } catch (e) {
       console.warn(`[tg] @${ch}: ${e.message}`);
+      report.channels.errors++;
+      report.channels.lastError = `@${ch}: ${String(e.message || e).slice(0, 180)}`;
     }
     await sleep(2000);
   }
@@ -148,6 +163,8 @@ async function sendAll(sender, state, listings, firstRun) {
 
 async function runOnce(client, sender, state, rates, llm) {
   const t0 = Date.now();
+  report.sites = {};
+  report.channels = { ok: 0, errors: 0, found: 0, sent: 0 };
   const firstRun = Object.keys(state.data.sent).length === 0;
   await rates.refresh();
   // Каналы и подписки первыми: они быстрые и важнее всего.
@@ -169,6 +186,16 @@ async function runOnce(client, sender, state, rates, llm) {
     try { await sender.sendBatch([], { notify: false, seen: seen.slice(i, i + 3000) }); } catch (e) { console.warn('[send] seen:', e.message); }
   }
   state.save();
+  // Последним пакетом — отчёт прохода (для /health). Старый бот незнакомое поле просто пропустит.
+  try {
+    await sender.sendBatch([], { notify: false, report: {
+      ...report,
+      startedAt: Math.floor(t0 / 1000), finishedAt: Math.floor(Date.now() / 1000),
+      durationSec: Math.round((Date.now() - t0) / 1000), sent: fromSites + fromTg.length,
+      llmErrors: llm.apiErrors || 0, floodUntil: sender.floodUntil ? Math.floor(sender.floodUntil / 1000) : 0,
+      runId: process.env.GITHUB_RUN_ID || null,
+    } });
+  } catch (e) { console.warn('[send] report:', e.message); }
   console.log(`[run] отправлено ${fromSites + fromTg.length} (площадки ${fromSites}, каналы ${fromTg.length}) за ${Math.round((Date.now() - t0) / 1000)} с`);
 }
 

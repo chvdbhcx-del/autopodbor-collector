@@ -77,8 +77,8 @@ export class BotSender {
   }
 
   // Пакет объявлений одним JSON-файлом.
-  async sendBatch(listings, { notify = true, seen } = {}) {
-    const body = Buffer.from(JSON.stringify({ v: 1, notify, listings, ...(seen ? { seen } : {}) }), 'utf8');
+  async sendBatch(listings, { notify = true, seen, report } = {}) {
+    const body = Buffer.from(JSON.stringify({ v: 1, notify, listings, ...(seen ? { seen } : {}), ...(report ? { report } : {}) }), 'utf8');
     const name = `batch-${Date.now()}.json`;
     await this.forget(await this.client.sendFile(this.bot, { file: new CustomFile(name, body.length, '', body), forceDocument: true }));
     await sleep(1500);
