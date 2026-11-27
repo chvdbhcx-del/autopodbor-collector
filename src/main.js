@@ -36,6 +36,13 @@ const seenUids = new Set();
 async function collectSites(state, rates, llm, emit, deadline) {
   const names = cfg.sites || [];
   let total = 0;
+  // Раньше фото Autowini заливал сборщик (до 25 машин за запуск), у остальных в боте их нет.
+  // Один раз сбрасываем «не менялось» у Autowini, чтобы машины ушли в бот заново со ссылками на фото.
+  // У тех, что уже загружены с фото, отпечаток совпадёт и повторно они не уйдут.
+  if (!state.data.autowiniPhotosV2) {
+    for (const [uid, v] of Object.entries(state.data.sent || {})) if (uid.startsWith('autowini:') && v) delete v.listFp;
+    state.data.autowiniPhotosV2 = true;
+  }
   await Promise.all(names.map(async (name) => {
     let mod;
     try { mod = await import(`./sources/${name}.js`); } catch (e) { console.warn(`[${name}] модуль не загружен: ${e.message}`); return; }
