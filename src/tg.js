@@ -15,11 +15,14 @@ export function makeClient(session = process.env.TG_SESSION || '') {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// GramJS сам ждёт при FloodWait до floodSleepThreshold; добавляем короткую паузу между отправками.
+// GramJS сам ждёт при FloodWait до floodSleepThreshold (60 с); дольше — бросает ошибку, её ловит noteFlood.
+// Пауза общая для фото и пакетов: под FloodWait аккаунт не может отправить в бот ничего.
 export class BotSender {
   constructor(client, botUsername) {
     this.client = client;
     this.bot = botUsername.replace(/^@/, '');
+    // Паузу FloodWait до 2 минут пережидаем на месте, дольше — откладываем отправку до следующего запуска.
+    this.maxFloodWaitMs = 120_000;
   }
 
   // Служебные сообщения не должны оставаться в чате аккаунта: бот удаляет их у обеих сторон,
@@ -41,17 +44,18 @@ export class BotSender {
   // Telegram ответил FloodWait: до этого момента фото не грузим, иначе ожидание только растёт.
   flooded() { return Date.now() < (this.floodUntil || 0); }
   noteFlood(e) {
-    const sec = e?.seconds || Number(/wait of (\d+) seconds/.exec(e?.message || '')?.[1]);
+    if (e?.flood) return true;
+    const sec = e?.seconds || Number(/wait of (\d+) seconds/.exec(e?.message || '')?.[1]) || Number(/FLOOD_WAIT_(\d+)/.exec(e?.message || '')?.[1]);
     if (!sec) return false;
-    this.floodUntil = Date.now() + sec * 1000;
-    console.warn(`[send] Telegram просит паузу ${sec} с, фото до конца запуска не грузим`);
+    this.floodUntil = Math.max(this.floodUntil || 0, Date.now() + sec * 1000);
+    console.warn(`[send] Telegram просит паузу ${sec} с`);
     return true;
   }
 
   // Фото поста канала: бот запомнит file_id по подписи «#ingest <uid> <pos>». true, если ушли все.
   async sendPhotos(uid, photos) {
     if (!photos.length) return true;
-    if (this.flooded()) return false;
+    try { await this.#gate('photos'); } catch { return false; }
     // Все фото поста, пачками по 10 (больше Telegram в один альбом не берёт). Бот хранит до 60.
     const all = photos.slice(0, 60);
     for (let off = 0; off < all.length; off += 10) {
@@ -71,16 +75,42 @@ export class BotSender {
     return true;
   }
 
+  // Перед отправкой: если Telegram велел ждать, короткую паузу переждём, а длинную — нет:
+  // бросаем ошибку сразу, вызывающий не отметит пакет отправленным и повторит его в следующий запуск.
+  async #gate(what) {
+    const left = (this.floodUntil || 0) - Date.now();
+    if (left <= 0) return;
+    if (left <= this.maxFloodWaitMs) { await sleep(left + 1000); return; }
+    throw new FloodError(Math.ceil(left / 1000), what);
+  }
+
+  async #send(what, fn) {
+    await this.#gate(what);
+    try { return await fn(); } catch (e) {
+      if (this.noteFlood(e)) throw new FloodError(e.seconds || Math.ceil(((this.floodUntil || 0) - Date.now()) / 1000), what);
+      throw e;
+    }
+  }
+
   // Попросить бот обновить подписки по площадкам, которые он опрашивает сам.
   async refresh() {
-    await this.forget(await this.client.sendMessage(this.bot, { message: '#refresh' }));
+    await this.#send('refresh', async () => this.forget(await this.client.sendMessage(this.bot, { message: '#refresh' })));
   }
 
   // Пакет объявлений одним JSON-файлом.
   async sendBatch(listings, { notify = true, seen, report } = {}) {
     const body = Buffer.from(JSON.stringify({ v: 1, notify, listings, ...(seen ? { seen } : {}), ...(report ? { report } : {}) }), 'utf8');
     const name = `batch-${Date.now()}.json`;
-    await this.forget(await this.client.sendFile(this.bot, { file: new CustomFile(name, body.length, '', body), forceDocument: true }));
+    await this.#send('batch', async () => this.forget(await this.client.sendFile(this.bot, { file: new CustomFile(name, body.length, '', body), forceDocument: true })));
     await sleep(1500);
+  }
+}
+
+// Telegram попросил паузу дольше, чем мы готовы ждать в этом запуске.
+export class FloodError extends Error {
+  constructor(seconds, what = '') {
+    super(`FloodWait ${seconds} с${what ? ` (${what})` : ''}`);
+    this.seconds = seconds;
+    this.flood = true;
   }
 }

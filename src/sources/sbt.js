@@ -3,10 +3,10 @@
 // в каждой карточке форма запроса со списком стран). В списке уже есть все характеристики,
 // поэтому страницу машины не качаем: все фото берём из JSON /api/stockImages/<id> (≈8 КБ).
 // Описания продавца у SBT нет.
-import { get, sleep } from '../http.js';
+import { get, sleep, timeUp } from '../http.js';
 
 const BASE = 'https://www.sbtjapan.com';
-const LIST_URL = (slug) => `${BASE}/used-cars/${slug}?show_numbers=20`;
+export const LIST_URL = (slug, page = 1) => `${BASE}/used-cars/${slug}?show_numbers=20${page > 1 ? `&page=${page}` : ''}`;
 const IMAGES_URL = (id) => `${BASE}/api/stockImages/${encodeURIComponent(id)}`;
 const MAX_PHOTOS = 60;
 
@@ -326,19 +326,27 @@ export function parseDetail(json) {
   return { photos: parseImages(json) };
 }
 
-export async function search(brand, model, { rates, isKnown } = {}) { // eslint-disable-line no-unused-vars
+export async function listPage(brand, model, page) {
+  const slug = MODELS[`${brand}|${model}`];
+  return slug ? parseList(await get(LIST_URL(slug, page), { timeout: 60_000 }), brand, model) : [];
+}
+
+export async function search(brand, model, { rates, isKnown, onList, deadline } = {}) { // eslint-disable-line no-unused-vars
   const slug = MODELS[`${brand}|${model}`];
   if (!slug) return [];
   const html = await get(LIST_URL(slug), { timeout: 60_000 });
   const list = parseList(html, brand, model);
+  if (onList) onList(list);
   const out = [];
   for (const l of list) {
+    if (timeUp(deadline)) break;
     if (isKnown && isKnown(l)) continue;
     try {
       const d = parseDetail(await get(IMAGES_URL(l.uid.slice(4)), { as: 'json', headers: { Accept: 'application/json', Referer: l.url } }));
       if (d.photos.length) l.photos = d.photos;
     } catch (e) {
       console.warn(`[sbt] фото ${l.uid}: ${e.message}`);
+      l._partial = true;
     }
     out.push(l);
     await sleep(700);

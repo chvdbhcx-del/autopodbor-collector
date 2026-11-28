@@ -2,7 +2,7 @@
 // Список: /stocklist/make=<id>/model=<id>/sortkey=e/ (sortkey=e — «Ref New to Old», то есть
 // самые новые объявления; ≈0.75 МБ, 25 машин). Карточка /<марка>/<модель>/<ref>/id/<id>/ —
 // все фото (large, обычно 20–95 шт.), таблица характеристик и Remarks продавца.
-import { get, sleep } from '../http.js';
+import { get, sleep, timeUp, DETAIL_TOP } from '../http.js';
 
 const BASE = 'https://www.beforward.jp';
 const MAX_PHOTOS = 60;
@@ -224,7 +224,7 @@ export const MODELS = {
   'Li Auto|L9': { make: 792, models: [16966] },
 };
 
-const LIST_URL = (make, model) => `${BASE}/stocklist/make=${make}/model=${model}/sortkey=e/`;
+export const LIST_URL = (make, model, page = 1) => `${BASE}/stocklist/make=${make}/model=${model}/${page > 1 ? `page=${page}/` : ''}sortkey=e/`;
 
 const FUEL = { petrol: 'petrol', gasoline: 'petrol', diesel: 'diesel', hybrid: 'hybrid', 'hybrid(petrol)': 'hybrid', 'hybrid(diesel)': 'hybrid', electric: 'ev', lpg: 'lpg' };
 const PLACE = {
@@ -350,23 +350,39 @@ export function parseDetail(html, brand) {
   return out;
 }
 
-export async function search(brand, model, { rates, isKnown } = {}) { // eslint-disable-line no-unused-vars
-  const m = MODELS[`${brand}|${model}`];
-  if (!m) return [];
-  let list = [];
+// Списки всех подмоделей; если не открылся ни один — ошибка, а не «найдено 0».
+async function fetchLists(m, brand, model, page = 1) {
+  const list = [];
+  let fails = 0, last;
   for (const id of m.models) {
     try {
-      list.push(...parseList(await get(LIST_URL(m.make, id), { timeout: 45_000 }), brand, model));
+      list.push(...parseList(await get(LIST_URL(m.make, id, page), { timeout: 45_000 }), brand, model));
     } catch (e) {
+      fails++; last = e;
       console.warn(`[beforward] ${brand} ${model} (${id}): ${e.message}`);
     }
     await sleep(800);
   }
+  if (fails && fails === m.models.length) throw last;
   const seen = new Set();
-  list = list.filter((l) => !seen.has(l.uid) && seen.add(l.uid)).sort((a, b) => b._sort - a._sort).slice(0, 30);
+  return list.filter((l) => !seen.has(l.uid) && seen.add(l.uid)).sort((a, b) => b._sort - a._sort);
+}
+
+export async function listPage(brand, model, page) {
+  const m = MODELS[`${brand}|${model}`];
+  return m ? fetchLists(m, brand, model, page) : [];
+}
+
+export async function search(brand, model, { rates, isKnown, onList, deadline } = {}) { // eslint-disable-line no-unused-vars
+  const m = MODELS[`${brand}|${model}`];
+  if (!m) return [];
+  const all = await fetchLists(m, brand, model);
+  if (onList) onList(all);
+  const list = all.slice(0, DETAIL_TOP);
   const out = [];
   for (const l of list) {
     delete l._sort;
+    if (timeUp(deadline)) break;
     if (isKnown && isKnown(l)) continue;
     try {
       const d = parseDetail(await get(l.url, { timeout: 45_000 }), brand);
@@ -378,6 +394,7 @@ export async function search(brand, model, { rates, isKnown } = {}) { // eslint-
       }
     } catch (e) {
       console.warn(`[beforward] карточка ${l.uid}: ${e.message}`);
+      l._partial = true;
     }
     out.push(l);
     await sleep(800);

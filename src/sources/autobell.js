@@ -2,7 +2,7 @@
 // Выдача: POST /api/buycar/selectGeneralList.do с объектом условий поиска (как в Redux сайта).
 // Карточка: GET selectProductDetailCarPhoto / CarContent / CarOption ?dlrPrdId=...
 import { fetch, EnvHttpProxyAgent } from 'undici';
-import { get, sleep, UA } from '../http.js';
+import { get, sleep, timeUp, UA } from '../http.js';
 
 const BASE = 'https://autobell.co.kr';
 const API = `${BASE}/api/buycar`;
@@ -171,7 +171,7 @@ const UNREACHABLE = /autoinside\.co\.kr/;
 export const usablePhoto = (u) => Boolean(u) && !UNREACHABLE.test(u);
 
 // Условие поиска — копия начального состояния фильтра сайта (viewType 0, тип normal).
-export function buildCondition(w, pageSize = 30) {
+export function buildCondition(w, pageSize = 30, page = 1) {
   return {
     isMobile: 'N', cho: ['1', '2'], carType: [],
     crMnfcCd: w.mnfc, crMnfcNm: '', crMdlCd: w.mdl, crMdlNm: '',
@@ -179,7 +179,7 @@ export function buildCondition(w, pageSize = 30) {
     yearRange: { min: 1990, max: new Date().getFullYear() + 1 },
     distanceRange: { min: 0, max: null }, priceRange: { min: 0, max: 9999999 },
     loc: [], carOption: [], color: [], fuel: [], mss: [], svc: [], brndGrpTp: '', brndGrpId: '', brndCmpnId: '', mrktCmplxSeqNo: '',
-    acdt: [], searchTerm: '', currentPage: 1, countPerPage: pageSize, countPerMore: pageSize,
+    acdt: [], searchTerm: '', currentPage: page, countPerPage: pageSize, countPerMore: pageSize,
     type: 'normal', viewType: '0', tab: '0', subTab: '', detailTab: '', listType: 'card', homeSvc: 'N', ewInsuSvc: 'N',
     order: 'upd_dt', selected: [], selectedList: [], advConditionStack: [], smpConditionStack: [], filterTab: '0',
   };
@@ -267,13 +267,20 @@ async function postJson(url, body) {
   const proxied = process.env.HTTPS_PROXY || process.env.https_proxy;
   if (proxied && !agent) agent = new EnvHttpProxyAgent();
   for (let i = 0; ; i++) {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'User-Agent': UA, 'Content-Type': 'application/json', ...HEADERS },
-      body: JSON.stringify(body),
-      dispatcher: proxied ? agent : undefined,
-      signal: AbortSignal.timeout(30_000),
-    });
+    let r;
+    try {
+      r = await fetch(url, {
+        method: 'POST',
+        headers: { 'User-Agent': UA, 'Content-Type': 'application/json', ...HEADERS },
+        body: JSON.stringify(body),
+        dispatcher: proxied ? agent : undefined,
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (e) {
+      // Обрыв соединения или таймаут: повторяем так же, как 429/5xx.
+      if (i < 2) { await sleep(1500 * (i + 1)); continue; }
+      throw e;
+    }
     if ((r.status === 429 || r.status >= 500) && i < 2) { await sleep(3000 * (i + 1)); continue; }
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
@@ -291,21 +298,28 @@ export async function fetchDetail(id) {
   return parseDetail({ photo, content, option });
 }
 
-export async function search(brand, model, { rates, isKnown } = {}) {
+async function fetchList(w, brand, model, page = 1) {
+  const data = await postJson(`${API}/selectGeneralList.do`, buildCondition(w, 30, page));
+  if (data && data.statusinfo && data.statusinfo.returncd !== '000') throw new Error(`returncd ${data.statusinfo.returncd}`);
+  return { list: parseList(data, brand, model), total: data?.data?.totalCount };
+}
+
+// Следующие страницы списка: только чтобы отметить известные машины «ещё продаются».
+export async function listPage(brand, model, page) {
+  const w = MODELS[`${brand}|${model}`];
+  return w ? (await fetchList(w, brand, model, page)).list : [];
+}
+
+export async function search(brand, model, { rates, isKnown, onList, deadline } = {}) { // eslint-disable-line no-unused-vars
   const w = MODELS[`${brand}|${model}`];
   if (!w) return [];
-  let list;
-  try {
-    const data = await postJson(`${API}/selectGeneralList.do`, buildCondition(w));
-    if (data && data.statusinfo && data.statusinfo.returncd !== '000') throw new Error(`returncd ${data.statusinfo.returncd}`);
-    list = parseList(data, brand, model);
-    console.log(`[autobell] ${brand} ${model} -> ${list.length} (всего ${data?.data?.totalCount ?? '?'})`);
-  } catch (e) {
-    console.warn(`[autobell] ${brand} ${model}: ${e.message}`);
-    return [];
-  }
+  // Ошибка списка уходит наверх: иначе блок сайта выглядит как «найдено 0» и запуск зелёный.
+  const { list, total } = await fetchList(w, brand, model);
+  console.log(`[autobell] ${brand} ${model} -> ${list.length} (всего ${total ?? '?'})`);
+  if (onList) onList(list);
   const out = [];
   for (const l of list) {
+    if (timeUp(deadline)) break;
     if (isKnown && isKnown(l)) continue;
     try {
       await sleep(700);
@@ -317,6 +331,7 @@ export async function search(brand, model, { rates, isKnown } = {}) {
       }
     } catch (e) {
       console.warn(`[autobell] карточка ${l.uid}: ${e.message}`);
+      l._partial = true;
     }
     out.push(l);
   }

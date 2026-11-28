@@ -12,12 +12,21 @@ export async function ensureJoined(client, channel) {
   }
 }
 
+// Сколько сообщений после lastId читать за проход. Читаем самые старые первыми (reverse):
+// если новых больше, остаток дочитает следующий проход, а не пропустит.
+export const READ_LIMIT = 500;
+
 // Посты после lastId. Альбом (несколько сообщений с одним groupedId) склеивается в один пост.
 export async function readNewPosts(client, channel, lastId, backfill = 30) {
-  const opts = lastId ? { minId: lastId, limit: 200 } : { limit: backfill };
-  const msgs = await client.getMessages(channel, opts);
+  const opts = lastId ? { minId: lastId, reverse: true, limit: READ_LIMIT } : { limit: backfill };
+  const msgs = [...(await client.getMessages(channel, opts))].filter((m) => m && m.id).sort((a, b) => a.id - b.id);
+  // Альбом мог разрезаться границей READ_LIMIT: хвостовой альбом оставляем на следующий проход.
+  if (lastId && msgs.length >= READ_LIMIT) {
+    const g = msgs[msgs.length - 1].groupedId?.toString();
+    if (g) while (msgs.length > 1 && msgs[msgs.length - 1].groupedId?.toString() === g) msgs.pop();
+  }
   const posts = new Map();
-  for (const m of [...msgs].reverse()) {
+  for (const m of msgs) {
     if (!m || !m.id) continue;
     const key = m.groupedId ? `g${m.groupedId.toString()}` : `m${m.id}`;
     let p = posts.get(key);

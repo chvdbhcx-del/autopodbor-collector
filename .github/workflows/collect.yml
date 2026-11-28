@@ -9,19 +9,15 @@ jobs:
   collect:
     runs-on: ubuntu-latest
     timeout-minutes: 50
-    env:
-      TG_API_ID: ${{ secrets.TG_API_ID }}
-      TG_API_HASH: ${{ secrets.TG_API_HASH }}
-      TG_SESSION: ${{ secrets.TG_SESSION }}
-      BOT_USERNAME: autosearchcorapt_bot
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-haiku-5-5' }}
+    # Секреты — только у шагов, которым они нужны (npm ci и чужие actions их не видят).
     outputs:
       started: ${{ steps.check.outputs.started }}
     steps:
       - name: Check secrets
         id: check
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
         run: |
           echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
           if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; then
@@ -37,19 +33,40 @@ jobs:
         if: steps.check.outputs.skip != '1'
       - name: Restore state
         if: steps.check.outputs.skip != '1'
+        env:
+          TG_SESSION: ${{ secrets.TG_SESSION }}
         run: |
           git fetch --depth 1 origin state 2>/dev/null || { echo "нет ветки state: сначала запустите workflow login"; exit 1; }
           git show FETCH_HEAD:session.enc > session.enc 2>/dev/null || [ -n "$TG_SESSION" ] || { echo "нет session.enc: запустите workflow login"; exit 1; }
           git show FETCH_HEAD:state.json > state.json 2>/dev/null || echo "первый запуск"
+      # Туннель упал — каналы и площадки, которым VPN не нужен, всё равно собираем.
       - name: Tunnel (if USE_WG=1)
+        id: wg
         if: steps.check.outputs.skip != '1' && vars.USE_WG == '1'
+        continue-on-error: true
         env: { WG_CONF: '${{ secrets.WG_CONF }}' }
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq wireguard-tools >/dev/null
           printf '%s\n' "$WG_CONF" | grep -v '^DNS' | sudo tee /etc/wireguard/wg0.conf >/dev/null
           sudo chmod 600 /etc/wireguard/wg0.conf && sudo wg-quick up wg0
+          # Туннель поднялся, но трафик не идёт: снимаем его, иначе упадёт вообще всё.
+          if ! curl -sS -m 20 -o /dev/null https://api.github.com; then
+            echo "::warning::VPN поднят, но связи нет: снимаю туннель"; sudo wg-quick down wg0; exit 1
+          fi
+      - name: VPN warning
+        if: steps.wg.outcome == 'failure'
+        run: echo "::warning::VPN не поднялся, площадки за VPN в этот раз могут не открыться"
       - name: Collect
         if: steps.check.outputs.skip != '1'
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_SESSION: ${{ secrets.TG_SESSION }}
+          SESSION_KEY: ${{ secrets.SESSION_KEY }}
+          BOT_USERNAME: autosearchcorapt_bot
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'claude-haiku-5-5' }}
         run: node src/main.js --once
       - name: Save state
         if: always() && steps.check.outputs.skip != '1'
@@ -59,13 +76,17 @@ jobs:
           git config user.name ci && git config user.email ci@users.noreply.github.com
           git checkout -q --orphan state-tmp && git rm -rq --cached . && cp /tmp/state.json state.json
           [ -f /tmp/session.enc ] && cp /tmp/session.enc session.enc && git add -f session.enc
-          git add -f state.json && git commit -qm "state ${{ github.run_id }}" && git push -f origin HEAD:state
+          git add -f state.json && git commit -qm "state ${{ github.run_id }}"
+          # Без повтора сбой push = следующий запуск заново разошлёт всё, что ушло в этот раз.
+          for i in 1 2 3 4; do git push -f origin HEAD:state && exit 0; echo "push не прошёл, повтор через $((i * 10)) с"; sleep $((i * 10)); done
+          exit 1
 
   # Cron на GitHub ненадёжен, поэтому каждый запуск сам ставит следующий через час.
   # Только для публичного репозитория: там минуты бесплатные, ожидание ничего не стоит.
   next:
     needs: collect
-    if: always() && vars.CHAIN != 'off'
+    # Не после отмены: отменённый вручную запуск не должен ставить следующий.
+    if: ${{ !cancelled() && vars.CHAIN != 'off' }}
     runs-on: ubuntu-latest
     timeout-minutes: 70
     steps:

@@ -2,7 +2,7 @@
 // Список: /usedcar/b<марка>/s<модель>/index.html?SORT=19 («新着順», новые сверху), ≈1 МБ, 30 машин.
 // Цены на сайте в 万円 (10 000 иен) — переводим в иены. Пробег в списке округлён до 0.1 万km,
 // в карточке так же. Карточка: все фото (обычно 30–60), таблица характеристик, комментарий продавца.
-import { get, sleep } from '../http.js';
+import { get, sleep, timeUp, DETAIL_TOP } from '../http.js';
 
 const BASE = 'https://www.carsensor.net';
 const MAX_PHOTOS = 60;
@@ -28,9 +28,9 @@ export const MODELS = {
   'BMW|X5': ['BM_S026'],
 };
 
-export const listUrl = (carc) => {
+export const listUrl = (carc, page = 1) => {
   const [b, s] = carc.split('_');
-  return `${BASE}/usedcar/b${b}/${s.toLowerCase()}/index.html?SORT=19`;
+  return `${BASE}/usedcar/b${b}/${s.toLowerCase()}/index${page > 1 ? page : ''}.html?SORT=19`;
 };
 
 const PREF = {
@@ -176,26 +176,42 @@ export function parseDetail(html) {
   return out;
 }
 
-export async function search(brand, model, { rates, isKnown } = {}) { // eslint-disable-line no-unused-vars
-  const codes = MODELS[`${brand}|${model}`];
-  if (!codes) return [];
+// Списки всех кодов модели; если не открылся ни один — ошибка, а не «найдено 0».
+async function fetchLists(codes, brand, model, page = 1) {
   let list = [];
+  let fails = 0, last;
   for (const carc of codes) {
     try {
-      list.push(...parseList(await get(listUrl(carc), { timeout: 45_000, headers: { 'Accept-Language': 'ja,en;q=0.8' } }), brand, model));
+      list.push(...parseList(await get(listUrl(carc, page), { timeout: 45_000, headers: { 'Accept-Language': 'ja,en;q=0.8' } }), brand, model));
     } catch (e) {
+      fails++; last = e;
       console.warn(`[carsensor] ${brand} ${model} (${carc}): ${e.message}`);
     }
     await sleep(800);
   }
+  if (fails && fails === codes.length) throw last;
   // id вида AU7549112949 растёт со временем — сортируем по нему, если списков несколько.
   const seen = new Set();
   list = list.filter((l) => !seen.has(l.uid) && seen.add(l.uid));
   if (codes.length > 1) list.sort((a, b) => (a._sort < b._sort ? 1 : -1));
-  list = list.slice(0, 30);
+  return list;
+}
+
+export async function listPage(brand, model, page) {
+  const codes = MODELS[`${brand}|${model}`];
+  return codes ? fetchLists(codes, brand, model, page) : [];
+}
+
+export async function search(brand, model, { rates, isKnown, onList, deadline } = {}) { // eslint-disable-line no-unused-vars
+  const codes = MODELS[`${brand}|${model}`];
+  if (!codes) return [];
+  const all = await fetchLists(codes, brand, model);
+  if (onList) onList(all);
+  const list = all.slice(0, DETAIL_TOP);
   const out = [];
   for (const l of list) {
     delete l._sort;
+    if (timeUp(deadline)) break;
     if (isKnown && isKnown(l)) continue;
     try {
       const d = parseDetail(await get(l.url, { timeout: 45_000, headers: { 'Accept-Language': 'ja,en;q=0.8' } }));
@@ -206,6 +222,7 @@ export async function search(brand, model, { rates, isKnown } = {}) { // eslint-
       }
     } catch (e) {
       console.warn(`[carsensor] карточка ${l.uid}: ${e.message}`);
+      l._partial = true;
     }
     out.push(l);
     await sleep(800);

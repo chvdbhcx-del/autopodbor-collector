@@ -2,7 +2,7 @@
 // Список: /en/cars/<МАРКА>/<МОДЕЛЬ>?q[s]=id desc (новые сверху), ≈1 МБ, 50 машин.
 // Карточка /en/cars/<МАРКА>/<МОДЕЛЬ>/<ref> — все фото (обычно ~20), таблица, комментарий.
 // Цена — FOB в долларах. Корейских, китайских марок и Genesis на сайте нет.
-import { get, sleep } from '../http.js';
+import { get, sleep, timeUp } from '../http.js';
 
 const BASE = 'https://sbimotor.com';
 const MAX_PHOTOS = 60;
@@ -115,7 +115,7 @@ export const MODELS = {
   'Mercedes-Benz|V-Class': ['MERCEDES-BENZ', ['V CLASS', 'V-CLASS']],
 };
 
-export const listUrl = (maker, model) => `${BASE}/en/cars/${encodeURIComponent(maker)}/${encodeURIComponent(model)}?q%5Bs%5D=id+desc`;
+export const listUrl = (maker, model, page = 1) => `${BASE}/en/cars/${encodeURIComponent(maker)}/${encodeURIComponent(model)}?q%5Bs%5D=id+desc${page > 1 ? `&page=${page}` : ''}`;
 
 const FUEL = { gasoline: 'petrol', petrol: 'petrol', diesel: 'diesel', hybrid: 'hybrid', electric: 'ev', lpg: 'lpg' };
 const CITY = { NAGOYA: 'Нагоя', YOKOHAMA: 'Иокогама', OSAKA: 'Осака', KOBE: 'Кобе', TOKYO: 'Токио', KAWASAKI: 'Кавасаки', HAKATA: 'Хаката', FUKUOKA: 'Фукуока', KISARAZU: 'Кисарадзу', CHIBA: 'Тиба', MOJI: 'Модзи', HITACHINAKA: 'Хитатинака', TOMAKOMAI: 'Томакомай', SENDAI: 'Сендай' };
@@ -229,30 +229,47 @@ export function parseDetail(html, brand) {
   return out;
 }
 
-export async function search(brand, model, { rates, isKnown } = {}) { // eslint-disable-line no-unused-vars
-  const m = MODELS[`${brand}|${model}`];
-  if (!m) return [];
+// Списки всех подмоделей; если не открылся ни один — ошибка, а не «найдено 0».
+async function fetchLists(m, brand, model, page = 1) {
   const [maker, models] = m;
-  let list = [];
+  const list = [];
+  let fails = 0, last;
   for (const md of models) {
     try {
-      list.push(...parseList(await get(listUrl(maker, md), { timeout: 45_000 }), brand, model));
+      list.push(...parseList(await get(listUrl(maker, md, page), { timeout: 45_000 }), brand, model));
     } catch (e) {
+      fails++; last = e;
       console.warn(`[sbi] ${brand} ${model} (${md}): ${e.message}`);
     }
     await sleep(800);
   }
+  if (fails && fails === models.length) throw last;
   const seen = new Set();
-  list = list.filter((l) => !seen.has(l.uid) && seen.add(l.uid)).sort((a, b) => b._sort - a._sort).slice(0, MAX_ITEMS);
+  return list.filter((l) => !seen.has(l.uid) && seen.add(l.uid)).sort((a, b) => b._sort - a._sort);
+}
+
+export async function listPage(brand, model, page) {
+  const m = MODELS[`${brand}|${model}`];
+  return m ? fetchLists(m, brand, model, page) : [];
+}
+
+export async function search(brand, model, { rates, isKnown, onList, deadline } = {}) { // eslint-disable-line no-unused-vars
+  const m = MODELS[`${brand}|${model}`];
+  if (!m) return [];
+  const all = await fetchLists(m, brand, model);
+  if (onList) onList(all);
+  const list = all.slice(0, MAX_ITEMS);
   const out = [];
   for (const l of list) {
     delete l._sort;
+    if (timeUp(deadline)) break;
     if (isKnown && isKnown(l)) continue;
     try {
       const d = parseDetail(await get(l.url, { timeout: 45_000 }), brand);
       for (const [k, v] of Object.entries(d)) if (v != null && !(Array.isArray(v) && !v.length)) l[k] = v;
     } catch (e) {
       console.warn(`[sbi] карточка ${l.uid}: ${e.message}`);
+      l._partial = true;
     }
     out.push(l);
     await sleep(800);
