@@ -5,7 +5,7 @@
 // Цены в 만원 (10 000 вон), переводим в воны.
 import crypto from 'node:crypto';
 import { fetch, EnvHttpProxyAgent } from 'undici';
-import { get, sleep, UA } from '../http.js';
+import { get, sleep, timeUp, UA, DETAIL_TOP } from '../http.js';
 
 const API = 'https://api.kcar.com';
 const CARD_URL = (id) => `https://www.kcar.com/bc/detail/carInfoDtl?i_sCarCd=${id}`;
@@ -324,13 +324,19 @@ export function listBody(codes, limit = 30) {
   return { enc: encParam({ pageno: 1, limit, wr_eq_mnuftr_cd: mnuftr, wr_eq_model_grp_cd: modelGrp, orderFlag: true, orderBy: 'car_cd:desc' }) };
 }
 
-export async function search(brand, model, { isKnown } = {}) {
+// Список берём длинным (API отдаёт до 300 за раз): все из него отмечаются «ещё продаются»,
+// а карточки грузятся только у DETAIL_TOP самых новых.
+export const LIST_LIMIT = 300;
+
+export async function search(brand, model, { isKnown, onList, deadline } = {}) {
   const codes = MODELS[`${brand}|${model}`];
   if (!codes) return [];
-  const json = await postJson(`${API}/bc/search/list/drct`, listBody(codes));
+  const json = await postJson(`${API}/bc/search/list/drct`, listBody(codes, LIST_LIMIT));
   const list = parseList(json, brand, model);
+  if (onList) onList(list);
   const out = [];
-  for (const l of list) {
+  for (const l of list.slice(0, DETAIL_TOP)) {
+    if (timeUp(deadline)) break;
     if (isKnown && isKnown(l)) continue;
     try {
       const id = l.uid.split(':')[1];
@@ -340,6 +346,7 @@ export async function search(brand, model, { isKnown } = {}) {
       Object.assign(l, det);
     } catch (e) {
       console.warn(`[kcar] карточка ${l.uid}: ${e.message}`);
+      l._partial = true;
     }
     out.push(l);
     await sleep(700);

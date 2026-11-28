@@ -9,8 +9,14 @@ function dispatcherFor(proxy) {
   return agents.get(key);
 }
 
-export const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+// Свежий Chrome: старая версия в User-Agent — частый повод для антибот-защиты отдать заглушку.
+export const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Дедлайн прохода: источники проверяют его между карточками, чтобы зависшая площадка не съела весь запуск.
+export const timeUp = (deadline) => Boolean(deadline) && Date.now() > deadline;
+// Сколько самых новых объявлений модели дозагружать карточкой за проход. Остальные из списка
+// только отмечаются как «ещё продаются» (onList).
+export const DETAIL_TOP = 30;
 
 export async function get(url, { headers = {}, proxy, retries = 2, timeout = 30_000, as = 'text' } = {}) {
   let last;

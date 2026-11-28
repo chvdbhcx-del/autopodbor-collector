@@ -3,7 +3,7 @@
 // OLX хранит не больше 8 фото на объявление; большинство машин с OLX — перепост с Otomoto
 // (external_url), там до 40+ фото, поэтому для них открываем страницу Otomoto и берём фото оттуда.
 // CloudFront OLX через раз отвечает 403 на запросы подряд: ждём и повторяем, затем читаем HTML-выдачу.
-import { get, sleep } from '../http.js';
+import { get, sleep, timeUp } from '../http.js';
 
 const BASE = 'https://www.olx.pl';
 const API = `${BASE}/api/v1/offers/`;
@@ -289,8 +289,8 @@ export function parseDetail(html) {
   return { photos, desc_orig: desc || null };
 }
 
-export function buildApiUrl(w, limit = 40) {
-  const q = [['offset', 0], ['limit', limit], ['category_id', w.cat], ['sort_by', 'created_at:desc']];
+export function buildApiUrl(w, limit = 40, offset = 0) {
+  const q = [['offset', offset], ['limit', limit], ['category_id', w.cat], ['sort_by', 'created_at:desc']];
   w.models.forEach((v, i) => q.push([`filter_enum_model[${i}]`, v]));
   return API + '?' + q.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
 }
@@ -330,19 +330,23 @@ async function fetchList(w, brand, model) {
   return out.filter((l) => !seen.has(l.uid) && seen.add(l.uid)).sort((a, b) => (b.posted_at || 0) - (a.posted_at || 0));
 }
 
-export async function search(brand, model, { rates, isKnown } = {}) {
+// Следующие страницы (по 40) через API: только чтобы отметить известные машины «ещё продаются».
+export async function listPage(brand, model, page) {
   const w = MODELS[`${brand}|${model}`];
   if (!w) return [];
-  let list;
-  try {
-    list = await fetchList(w, brand, model);
-  } catch (e) {
-    console.warn(`[olx] ${brand} ${model}: ${e.message}`);
-    return [];
-  }
+  return parseList(await getRetry(buildApiUrl(w, 40, (page - 1) * 40), 'json'), brand, model);
+}
+
+export async function search(brand, model, { rates, isKnown, onList, deadline } = {}) { // eslint-disable-line no-unused-vars
+  const w = MODELS[`${brand}|${model}`];
+  if (!w) return [];
+  // Ошибка списка уходит наверх: иначе блок сайта выглядит как «найдено 0» и запуск зелёный.
+  const list = await fetchList(w, brand, model);
   console.log(`[olx] ${brand} ${model} -> ${list.length}`);
+  if (onList) onList(list);
   const out = [];
   for (const l of list) {
+    if (timeUp(deadline)) break;
     if (isKnown && isKnown(l)) continue;
     // Перепост с Otomoto: там все фото (OLX хранит максимум 8).
     if (l.external_url && /^https:\/\/www\.otomoto\.pl\//.test(l.external_url)) {
@@ -353,6 +357,7 @@ export async function search(brand, model, { rates, isKnown } = {}) {
         if (d.desc_orig && (!l.desc_orig || d.desc_orig.length > l.desc_orig.length)) l.desc_orig = d.desc_orig;
       } catch (e) {
         console.warn(`[olx] otomoto ${l.uid}: ${e.message}`);
+        l._partial = true;
       }
     }
     delete l.external_url;

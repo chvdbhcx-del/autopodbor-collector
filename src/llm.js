@@ -30,6 +30,33 @@ const PostCar = z.object({
   desc_ru: z.string().nullable().describe('Суть поста по-русски, до 400 символов, без контактов и хэштегов'),
 });
 
+// Groq отвечает в JSON-режиме без строгой схемы: год строкой, «Diesel» с большой буквы, цена «2 650 000».
+// Приводим такие ответы к схеме, а не выбрасываем пост как «не объявление».
+const FUELS = ['diesel', 'petrol', 'hybrid', 'ev', 'lpg'];
+const FUEL_ALIASES = { gasoline: 'petrol', gas: 'petrol', бензин: 'petrol', дизель: 'diesel', гибрид: 'hybrid', electric: 'ev', электро: 'ev', газ: 'lpg' };
+const CURRENCIES = ['RUB', 'USD', 'EUR', 'KRW', 'JPY', 'CNY'];
+const CUR_ALIASES = { '₽': 'RUB', РУБ: 'RUB', 'РУБ.': 'RUB', '$': 'USD', '€': 'EUR', '₩': 'KRW', '¥': 'JPY', YUAN: 'CNY', RMB: 'CNY' };
+const toNum = (v) => {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const n = Number(String(v).replace(/[\s\u00a0]/g, '').replace(',', '.').replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) && /\d/.test(String(v)) ? n : null;
+};
+const toInt = (v) => { const n = toNum(v); return n == null ? null : Math.round(n); };
+const toStr = (v) => (v == null || v === '' ? null : typeof v === 'string' ? v : String(v));
+export function normalizePost(o) {
+  if (!o || typeof o !== 'object') return o;
+  const out = { ...o };
+  if (typeof out.is_car_listing === 'string') out.is_car_listing = /^(true|yes|да|1)$/i.test(out.is_car_listing.trim());
+  for (const k of ['year', 'month', 'mileage_km']) if (k in out) out[k] = toInt(out[k]);
+  if ('price' in out) out.price = toNum(out.price);
+  for (const k of ['brand', 'model', 'trim', 'transmission', 'drive', 'engine', 'price_note', 'location', 'title_ru', 'desc_ru']) if (k in out) out[k] = toStr(out[k]);
+  if (out.fuel != null) { const f = String(out.fuel).trim().toLowerCase(); out.fuel = FUELS.includes(f) ? f : FUEL_ALIASES[f] || null; }
+  if (out.currency != null) { const c = String(out.currency).trim().toUpperCase(); out.currency = CURRENCIES.includes(c) ? c : CUR_ALIASES[c] || null; }
+  for (const k of Object.keys(PostCar.shape)) if (!(k in out)) out[k] = k === 'is_car_listing' ? false : null;
+  return out;
+}
+
 const TRANSLATE_SYSTEM =
   'Ты переводишь объявления о продаже автомобилей на русский для покупателей из России. ' +
   'Переводи точно, сохраняй цифры, комплектацию и состояние. Убирай рекламные штампы, телефоны и ссылки. ' +
@@ -60,6 +87,8 @@ export class LLM {
     this.groqKey = process.env.GROQ_API_KEY || null;
     // Ошибки API (не «пост не про машину»): по ним main.js не сдвигает отметку прочитанного в каналах.
     this.apiErrors = 0;
+    // Ответы, которые не удалось разобрать даже после повтора (пост пропущен).
+    this.badResponses = 0;
     const anthropic = !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
     this.enabled = anthropic || !!this.groqKey;
     this.client = anthropic ? new Anthropic() : null;
@@ -91,6 +120,7 @@ export class LLM {
         { role: 'user', content: text },
       ],
     };
+    let badRetried = false;
     for (let i = 0; i < 5; i++) {
       try {
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -106,8 +136,22 @@ export class LLM {
         const data = await r.json();
         if (r.status === 404 && /model/i.test(data?.error?.message || '') && await this.#switchGroqModel()) { body.model = GROQ_MODEL; continue; }
         if (!r.ok) { this.apiErrors++; console.error(`[llm] Groq ${r.status}: ${data?.error?.message}`); return null; }
-        const parsed = schema.safeParse(JSON.parse(data.choices[0].message.content));
-        return parsed.success ? parsed.data : null;
+        // Плохой ответ (пустой content у gpt-oss, не JSON, не по схеме) — не ошибка API: один раз переспрашиваем,
+        // потом пропускаем пост, но пишем в лог, чтобы потери было видно.
+        const content = data?.choices?.[0]?.message?.content;
+        let parsed = null, why = 'пустой ответ';
+        if (content && String(content).trim()) {
+          try {
+            const obj = JSON.parse(content);
+            parsed = schema.safeParse(schema === PostCar ? normalizePost(obj) : obj);
+            if (!parsed.success) why = `не по схеме: ${parsed.error.issues.slice(0, 3).map((x) => `${x.path.join('.')} ${x.message}`).join('; ')}`;
+          } catch { why = 'не JSON'; }
+        }
+        if (parsed?.success) return parsed.data;
+        if (!badRetried) { badRetried = true; console.warn(`[llm] Groq: ${why}, переспрашиваю`); continue; }
+        this.badResponses++;
+        console.warn(`[llm] Groq: ${why}, пропускаю`);
+        return null;
       } catch (e) {
         this.apiErrors++;
         console.error('[llm] Groq', e.message);

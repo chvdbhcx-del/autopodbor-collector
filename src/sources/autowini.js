@@ -257,7 +257,15 @@ export const listUrl = (m, page = 1) =>
   `${API}/items/cars?make=${m.make}&subModel=${m.sub}&sorting=recentDate${page > 1 ? `&pageOffset=${page}` : ''}`;
 
 // Карточки без входа нет, поэтому search() обходится одним запросом на модель.
-export async function search(brand, model, { isKnown } = {}) {
+export async function listPage(brand, model, page) {
+  const m = MODELS[`${brand}|${model}`];
+  if (!m) return [];
+  const json = await get(listUrl(m, page), { headers: HEADERS, as: 'json' });
+  if (json && json.result && json.result !== 'SUCCESS') throw new Error(json.errorMessage || json.result);
+  return parseList(json, brand, model);
+}
+
+export async function search(brand, model, { isKnown, onList } = {}) {
   const m = MODELS[`${brand}|${model}`];
   if (!m) return [];
   const json = await get(listUrl(m), { headers: HEADERS, as: 'json' });
@@ -269,5 +277,7 @@ export async function search(brand, model, { isKnown } = {}) {
     try { list = list.concat(parseList(await get(listUrl(m, 2), { headers: HEADERS, as: 'json' }), brand, model)); } catch { /* хватит и первой */ }
   }
   const seen = new Set();
-  return list.filter((l) => !seen.has(l.uid) && seen.add(l.uid) && !(isKnown && isKnown(l)));
+  list = list.filter((l) => !seen.has(l.uid) && seen.add(l.uid));
+  if (onList) onList(list);
+  return list.filter((l) => !(isKnown && isKnown(l)));
 }
