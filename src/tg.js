@@ -23,6 +23,8 @@ export class BotSender {
     this.bot = botUsername.replace(/^@/, '');
     // Паузу FloodWait до 2 минут пережидаем на месте, дольше — откладываем отправку до следующего запуска.
     this.maxFloodWaitMs = 120_000;
+    // Паузы перед повторами при временных ошибках Telegram (500, обрыв).
+    this.retryDelays = [3000, 10_000];
   }
 
   // Служебные сообщения не должны оставаться в чате аккаунта: бот удаляет их у обеих сторон,
@@ -85,10 +87,15 @@ export class BotSender {
   }
 
   async #send(what, fn) {
-    await this.#gate(what);
-    try { return await fn(); } catch (e) {
-      if (this.noteFlood(e)) throw new FloodError(e.seconds || Math.ceil(((this.floodUntil || 0) - Date.now()) / 1000), what);
-      throw e;
+    for (let i = 0; ; i++) {
+      await this.#gate(what);
+      try { return await fn(); } catch (e) {
+        if (this.noteFlood(e)) throw new FloodError(e.seconds || Math.ceil(((this.floodUntil || 0) - Date.now()) / 1000), what);
+        // Сбой на стороне Telegram (500 FILE_WRITE_EMPTY и т. п.) обычно проходит при повторе.
+        if (!isTransient(e) || i >= this.retryDelays.length) throw e;
+        console.warn(`[send] ${what}: ${e.message}, повтор через ${Math.round(this.retryDelays[i] / 1000)} с`);
+        await sleep(this.retryDelays[i]);
+      }
     }
   }
 
@@ -104,6 +111,13 @@ export class BotSender {
     await this.#send('batch', async () => this.forget(await this.client.sendFile(this.bot, { file: new CustomFile(name, body.length, '', body), forceDocument: true })));
     await sleep(1500);
   }
+}
+
+// Временные ошибки Telegram: внутренние (500), запись файла, таймаут и обрыв соединения.
+export function isTransient(e) {
+  const code = Number(e?.code);
+  const msg = String(e?.errorMessage || e?.message || '');
+  return code >= 500 || /^5\d\d\b|FILE_WRITE|INTERNAL|RPC_CALL_FAIL|RPC_MCGET_FAIL|WORKER_BUSY|TIMEOUT|Timeout|ECONNRESET|socket hang up|Not connected/.test(msg);
 }
 
 // Telegram попросил паузу дольше, чем мы готовы ждать в этом запуске.

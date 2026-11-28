@@ -13,6 +13,12 @@ export const SWEEP_PAGES = 10;
 // Одну и ту же машину сообщаем боту как «ещё продаётся» не чаще раза в 20 часов: бот скрывает
 // через 14 дней, а каждая отметка — запись в его базе.
 export const SEEN_REPORT_HOURS = 20;
+// Листание страниц — не главное: только пока до дедлайна больше 40% прохода и не дольше
+// четверти прохода на площадку. Остальные модели досмотрят в следующие запуски.
+export const SWEEP_RESERVE = 0.4;
+export const SWEEP_SHARE = 0.25;
+// Сколько неотправленных пакетов за проход ещё считаем разовым сбоем (запуск остаётся зелёным).
+export const SEND_ERRORS_OK = 2;
 
 export const listFingerprint = (l) => `${l.price}|${l.mileage_km}`;
 
@@ -44,6 +50,9 @@ export class Run {
     this.report = { sites: {}, channels: { ok: 0, errors: 0, found: 0, sent: 0 } };
     this.firstRun = Object.keys(state.data.sent).length === 0;
     this.sendErrors = 0;
+    this.delivered = 0;
+    this.sweepMs = {};
+    this.runMs = (cfg.run_minutes || 38) * 60_000;
   }
 
   // Машина снова встретилась на площадке. В бот уходят только те, что он знает от нас.
@@ -84,6 +93,7 @@ export class Run {
       const chunk = listings.slice(i, i + BATCH);
       // Первый запуск наполняет базу: не засыпаем подписчиков уведомлениями.
       await this.sender.sendBatch(chunk.map(toBot), { notify: !this.firstRun });
+      this.delivered += chunk.length;
       for (const l of chunk) {
         const v = this.state.markSent(l, l._fp || fingerprint(l));
         // Карточка не загрузилась или нет курса: «не менялось» не ставим, в следующий раз дозагрузим.
@@ -127,7 +137,9 @@ export class Run {
         tried.add(key);
         const isRetry = retry.includes(key);
         try {
-          total += await this.collectModel(name, mod, key, st, deadline);
+          // Сначала await, потом +=: площадки идут параллельно, и `total += await …` терял чужие прибавки.
+          const n = await this.collectModel(name, mod, key, st, deadline);
+          total += n;
         } catch (e) {
           console.warn(`[${name}] ${key.replace('|', ' ')}: ${e.message}`);
           st.errors++;
@@ -189,12 +201,23 @@ export class Run {
     const sk = `${name}|${key}`;
     const at = this.state.data.sweepAt[sk] || 0;
     if (this.now() - at < SWEEP_HOURS * 3600_000) return;
+    if (deadline - this.now() < SWEEP_RESERVE * this.runMs) return;
+    if ((this.sweepMs[name] || 0) > SWEEP_SHARE * this.runMs) return;
+    const t0 = this.now();
+    try { await this.#sweepPages(name, mod, key, listed, deadline, sk); } finally { this.sweepMs[name] = (this.sweepMs[name] || 0) + (this.now() - t0); }
+  }
+
+  async #sweepPages(name, mod, key, listed, deadline, sk) {
     const [brand, model] = key.split('|');
     let pages = 0;
     for (let page = 2; page <= SWEEP_PAGES; page++) {
       if (this.now() > deadline) return; // не успели: досмотрим в следующий запуск
       let items;
-      try { items = await mod.listPage(brand, model, page); } catch (e) { console.warn(`[${name}] ${brand} ${model} стр. ${page}: ${e.message}`); return; }
+      try { items = await mod.listPage(brand, model, page); } catch (e) {
+        if (/HTTP 404/.test(e.message)) break; // страницы нет — список кончился
+        console.warn(`[${name}] ${brand} ${model} стр. ${page}: ${e.message}`);
+        return;
+      }
       pages++;
       let fresh = 0, known = 0;
       for (const l of items || []) {
@@ -299,13 +322,18 @@ export class Run {
       await this.sender.sendBatch([], { notify: false, report: {
         ...this.report,
         startedAt: Math.floor(t0 / 1000), finishedAt: Math.floor(finishedAt / 1000),
-        durationSec: Math.round((finishedAt - t0) / 1000), sent: fromSites + fromTg, seen: this.seenTotal,
+        durationSec: Math.round((finishedAt - t0) / 1000), sent: this.delivered, queued: fromSites + fromTg, seen: this.seenTotal,
         sendErrors: this.sendErrors, llmErrors: this.llm.apiErrors || 0, llmBad: this.llm.badResponses || 0,
         floodUntil: this.sender.floodUntil ? Math.floor(this.sender.floodUntil / 1000) : 0,
         runId: process.env.GITHUB_RUN_ID || null,
       } });
     } catch (e) { this.sendErrors++; console.warn('[send] report:', e.message); }
-    console.log(`[run] отправлено ${fromSites + fromTg} (площадки ${fromSites}, каналы ${fromTg}), ещё продаются ${this.seenTotal}, за ${Math.round((finishedAt - t0) / 1000)} с`);
-    return { sent: fromSites + fromTg, seen: this.seenTotal, sendErrors: this.sendErrors };
+    const lost = fromSites + fromTg - this.delivered;
+    console.log(`[run] отправлено ${this.delivered} из ${fromSites + fromTg} (площадки ${fromSites}, каналы ${fromTg})${lost > 0 ? `, ${lost} уйдут в следующий раз` : ''}, ещё продаются ${this.seenTotal}, за ${Math.round((finishedAt - t0) / 1000)} с`);
+    // Красный запуск — только если отправка сломана, а не из-за одного-двух сбоев Telegram:
+    // неотправленное не помечено отправленным и уйдёт в следующий запуск.
+    const failed = this.sendErrors > SEND_ERRORS_OK || (this.sendErrors > 0 && this.delivered === 0 && fromSites + fromTg > 0);
+    if (this.sendErrors && !failed) console.warn(`[run] ${this.sendErrors} пакет(а) не дошли, повторю в следующий раз`);
+    return { sent: this.delivered, queued: fromSites + fromTg, seen: this.seenTotal, sendErrors: this.sendErrors, failed };
   }
 }

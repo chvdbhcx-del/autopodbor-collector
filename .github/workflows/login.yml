@@ -14,8 +14,8 @@ jobs:
       TG_2FA: ${{ secrets.TG_2FA }}
       SESSION_KEY: ${{ secrets.SESSION_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
       - name: QR login

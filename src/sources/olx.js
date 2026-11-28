@@ -295,9 +295,16 @@ export function buildApiUrl(w, limit = 40, offset = 0) {
   return API + '?' + q.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
 }
 
-export function buildHtmlUrl(w, model = w.models[0]) {
-  return `${BASE}/motoryzacja/samochody/${w.path}/${model}/?search%5Border%5D=created_at:desc`;
+export function buildHtmlUrl(w, model = w.models[0], page = 1) {
+  return `${BASE}/motoryzacja/samochody/${w.path}/${model}/?${page > 1 ? `page=${page}&` : ''}search%5Border%5D=created_at:desc`;
 }
+
+// API OLX из Actions стабильно отвечает 403, а каждая попытка стоит ~25 с ожидания.
+// После отказа идём сразу в HTML и пробуем API снова только через полчаса.
+// Вторые страницы HTML тоже бывают закрыты: после 403 до конца часа их не листаем.
+const BLOCK_MS = 30 * 60_000;
+const blocked = { api: 0, pages: 0 };
+export function resetBlocks() { blocked.api = 0; blocked.pages = 0; }
 
 const HEADERS = { Accept: 'application/json, text/plain, */*', 'Accept-Language': 'pl-PL,pl;q=0.9,en;q=0.8', Referer: `${BASE}/motoryzacja/samochody/` };
 
@@ -316,10 +323,13 @@ async function getRetry(url, as) {
 }
 
 async function fetchList(w, brand, model) {
-  try {
-    return parseList(await getRetry(buildApiUrl(w), 'json'), brand, model);
-  } catch (e) {
-    console.warn(`[olx] API ${brand} ${model}: ${e.message}, читаю HTML`);
+  if (Date.now() > blocked.api) {
+    try {
+      return parseList(await get(buildApiUrl(w), { headers: HEADERS, as: 'json', retries: 1 }), brand, model);
+    } catch (e) {
+      if (/HTTP 403/.test(e.message)) { blocked.api = Date.now() + BLOCK_MS; console.warn(`[olx] API: HTTP 403, полчаса читаю только HTML`); }
+      else console.warn(`[olx] API ${brand} ${model}: ${e.message}, читаю HTML`);
+    }
   }
   const out = [];
   for (const slug of w.models) {
@@ -330,11 +340,29 @@ async function fetchList(w, brand, model) {
   return out.filter((l) => !seen.has(l.uid) && seen.add(l.uid)).sort((a, b) => (b.posted_at || 0) - (a.posted_at || 0));
 }
 
-// Следующие страницы (по 40) через API: только чтобы отметить известные машины «ещё продаются».
+// Следующие страницы: только чтобы отметить известные машины «ещё продаются».
+// Через API (по 40), если он открыт, иначе HTML с ?page=N. Одна попытка: это не главное.
 export async function listPage(brand, model, page) {
   const w = MODELS[`${brand}|${model}`];
   if (!w) return [];
-  return parseList(await getRetry(buildApiUrl(w, 40, (page - 1) * 40), 'json'), brand, model);
+  if (Date.now() > blocked.api) {
+    try { return parseList(await get(buildApiUrl(w, 40, (page - 1) * 40), { headers: HEADERS, as: 'json', retries: 0 }), brand, model); } catch (e) {
+      if (!/HTTP 403/.test(e.message)) throw e;
+      blocked.api = Date.now() + BLOCK_MS;
+    }
+  }
+  if (Date.now() < blocked.pages) return [];
+  const out = [];
+  try {
+    for (const slug of w.models) {
+      await sleep(2000);
+      out.push(...parseList(await get(buildHtmlUrl(w, slug, page), { headers: { ...HEADERS, Accept: 'text/html,*/*' }, retries: 0 }), brand, model));
+    }
+  } catch (e) {
+    if (/HTTP 403/.test(e.message)) { blocked.pages = Date.now() + BLOCK_MS; console.warn('[olx] вторые страницы закрыты (403), полчаса не листаю'); return out; }
+    throw e;
+  }
+  return out;
 }
 
 export async function search(brand, model, { rates, isKnown, onList, deadline } = {}) { // eslint-disable-line no-unused-vars

@@ -358,6 +358,8 @@ async function fetchLists(m, brand, model, page = 1) {
     try {
       list.push(...parseList(await get(LIST_URL(m.make, id, page), { timeout: 45_000 }), brand, model));
     } catch (e) {
+      // Страницы N у сайта нет (машин меньше): это конец списка, а не ошибка.
+      if (page > 1 && /HTTP 404/.test(e.message)) continue;
       fails++; last = e;
       console.warn(`[beforward] ${brand} ${model} (${id}): ${e.message}`);
     }
