@@ -179,7 +179,7 @@ export class Run {
     await this.translateAll(fresh);
     // Отправка идёт своей очередью, площадка не ждёт её и берёт следующую модель.
     if (fresh.length) this.enqueue(() => this.sendAll(fresh), name);
-    console.log(`[${name}] ${brand} ${model}: найдено ${list.length}, отправлено ${fresh.length}`);
+    console.log(`[${name}] ${brand} ${model}: в списке ${listed.size || list.length}, отправлено ${fresh.length}`);
     if (mod.listPage) await this.sweep(name, mod, key, listed, deadline);
     return fresh.length;
   }
