@@ -45,8 +45,8 @@ async function main() {
   do {
     try {
       const r = await new Run({ cfg, state, rates, llm, sender, client }).run();
-      // Часть пакетов не дошла до бота (FloodWait, обрыв): запуск красный, чтобы это было видно в Actions и /health.
-      if (r.sendErrors) failed = true;
+      // Отправка в бот сломана (не разовый сбой): запуск красный, чтобы это было видно в Actions и /health.
+      if (r.failed) failed = true;
     } catch (e) { console.error('[run]', e); failed = true; }
     if (once) break;
     failed = false;

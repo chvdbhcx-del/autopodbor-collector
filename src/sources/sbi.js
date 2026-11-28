@@ -238,6 +238,8 @@ async function fetchLists(m, brand, model, page = 1) {
     try {
       list.push(...parseList(await get(listUrl(maker, md, page), { timeout: 45_000 }), brand, model));
     } catch (e) {
+      // Страницы N у сайта нет (машин меньше): это конец списка, а не ошибка.
+      if (page > 1 && /HTTP 404/.test(e.message)) continue;
       fails++; last = e;
       console.warn(`[sbi] ${brand} ${model} (${md}): ${e.message}`);
     }

@@ -24,9 +24,9 @@ jobs:
             echo "::notice::Нет TG_API_ID / TG_API_HASH: сборщик не запущен (см. README)."
             echo "skip=1" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.check.outputs.skip != '1'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.check.outputs.skip != '1'
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund

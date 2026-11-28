@@ -184,6 +184,8 @@ async function fetchLists(codes, brand, model, page = 1) {
     try {
       list.push(...parseList(await get(listUrl(carc, page), { timeout: 45_000, headers: { 'Accept-Language': 'ja,en;q=0.8' } }), brand, model));
     } catch (e) {
+      // Страницы N у сайта нет (машин меньше): это конец списка, а не ошибка.
+      if (page > 1 && /HTTP 404/.test(e.message)) continue;
       fails++; last = e;
       console.warn(`[carsensor] ${brand} ${model} (${carc}): ${e.message}`);
     }

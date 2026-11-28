@@ -278,3 +278,81 @@ test('Groq: год строкой и «Diesel» приводятся к схем
     assert.equal(llm.apiErrors, 0, 'плохой ответ — не ошибка API');
   } finally { globalThis.fetch = orig; delete process.env.GROQ_API_KEY; }
 });
+
+test('итог: площадки параллельно — сумма отправленного не теряется, считается доставленное', async () => {
+  const s = new State(tmp());
+  const mk = (src, n) => ({
+    MODELS: { 'A|1': 1, 'A|2': 1 },
+    async search(b, m) { await new Promise((r) => setTimeout(r, src === 'x' ? 5 : 1)); return Array.from({ length: n }, (_, i) => ({ ...car(i), uid: `${src}:${m}:${i}` })); },
+  });
+  const sender = fakeSender();
+  const res = await makeRun(s, { x: mk('x', 3), y: mk('y', 5) }, { sender }).run();
+  assert.equal(res.queued, 16);
+  assert.equal(res.sent, 16);
+  assert.equal(sender.batches.at(-1).report.sent, 16);
+  assert.equal(res.failed, false);
+});
+
+test('итог: один-два сбоя отправки не красят запуск, сломанная отправка красит', async () => {
+  const mod = { MODELS: { 'A|1': 1, 'A|2': 1, 'A|3': 1 }, async search(b, m) { return [{ ...car(1), uid: `kcar:${m}` }]; } };
+  let n = 0;
+  const once = fakeSender({ failBatch: (l) => l.length > 0 && n++ === 0 });
+  const r1 = await makeRun(new State(tmp()), { kcar: mod }, { sender: once }).run();
+  assert.equal(r1.sendErrors, 1); assert.equal(r1.sent, 2); assert.equal(r1.failed, false);
+  const broken = fakeSender({ failBatch: () => true });
+  const r2 = await makeRun(new State(tmp()), { kcar: mod }, { sender: broken }).run();
+  assert.equal(r2.failed, true);
+});
+
+test('Telegram 500 при отправке пакета — повтор, а не потеря', async () => {
+  let calls = 0;
+  const client = { sendFile: async () => { if (++calls === 1) { const e = new Error('500: FILE_WRITE_EMPTY (caused by messages.SendMedia)'); e.code = 500; throw e; } return { id: 1 }; }, deleteMessages: async () => {} };
+  const s = new BotSender(client, 'bot');
+  s.retryDelays = [1];
+  await s.sendBatch([], {});
+  assert.equal(calls, 2);
+  const bad = new BotSender({ sendFile: async () => { throw new Error('CHAT_WRITE_FORBIDDEN'); } }, 'bot');
+  bad.retryDelays = [1];
+  await assert.rejects(bad.sendBatch([], {}), /CHAT_WRITE_FORBIDDEN/);
+});
+
+test('листание: 404 на следующей странице — конец списка, без ошибки; время на листание ограничено', async () => {
+  const s = new State(tmp());
+  s.markSent(car(10), 'fp');
+  const asked = [];
+  const mod = {
+    MODELS: { 'A|1': 1, 'A|2': 1 },
+    async search(b, m, { onList }) { onList([car(1)]); return []; },
+    async listPage(b, m, page) { asked.push(`${m}:${page}`); if (page === 3) throw new Error('HTTP 404'); return [car(10)]; },
+  };
+  const run = makeRun(s, { kcar: mod });
+  await run.run();
+  assert.deepEqual(asked, ['1:2', '1:3', '2:2', '2:3']);
+  assert.ok(s.data.sweepAt['kcar|A|1'], 'после 404 модель считается пролистанной');
+  // Лимит времени на листание у площадки исчерпан — следующие модели не листаем.
+  const s2 = new State(tmp());
+  const run2 = makeRun(s2, { kcar: mod });
+  run2.sweepMs.kcar = run2.runMs;
+  asked.length = 0;
+  await run2.run();
+  assert.deepEqual(asked, []);
+});
+
+test('http: после 429 запросы к хосту замедляются, удачные ответы отпускают', async () => {
+  const { note429, noteOk, throttle, resetThrottle } = await import('../src/http.js');
+  resetThrottle();
+  note429('example.com', '5');
+  const h = throttle('example.com');
+  assert.equal(h.gap, 2000);
+  assert.ok(h.next - Date.now() > 4000);
+  note429('example.com');
+  assert.equal(h.gap, 4000);
+  for (let i = 0; i < 20; i++) noteOk('example.com');
+  assert.equal(h.gap, 0);
+  resetThrottle();
+});
+
+test('olx: ссылка на вторую страницу HTML', async () => {
+  const { buildHtmlUrl, MODELS } = await import('../src/sources/olx.js');
+  assert.equal(buildHtmlUrl(MODELS['Hyundai|Staria'], 'staria', 2), 'https://www.olx.pl/motoryzacja/samochody/hyundai/staria/?page=2&search%5Border%5D=created_at:desc');
+});
